@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ title }}</title>
+    <style>
+        :root {
+            --bg: #f5f8fa;
+            --panel: #ffffff;
+            --border: #e6ecf0;
+            --text: #14171a;
+            --muted: #536471;
+            --accent: #1da1f2;
+            --good: #28a745;
+            --bad: #dc3545;
+            --mid: #007bff;
+            --low: #6c757d;
+            --dashboard-card-h: 213px;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: var(--bg);
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            color: var(--text);
+        }
+
+        .dashboard {
+            width: 66.67%;
+            background: var(--panel);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            min-width: 520px;
+        }
+
+        .feed {
+            width: 33.33%;
+            background: var(--panel);
+            display: flex;
+            flex-direction: column;
+            min-width: 340px;
+        }
+
+        .panel-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            background: var(--panel);
+            position: sticky;
+            top: 0;
+            z-index: 2;
+        }
+
+        .panel-header h1,
+        .panel-header h2 {
+            margin: 0;
+            font-size: 18px;
+        }
+
+        .panel-header .sub {
+            margin-top: 6px;
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .panel-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 20px;
+        }
+
+        .drop-zone {
+            border: 2px dashed #cfd9de;
+            border-radius: 10px;
+            padding: 12px;
+            text-align: center;
+            color: var(--muted);
+            margin-bottom: 16px;
+            background: #fbfdff;
+        }
+
+        .drop-zone.active {
+            border-color: var(--accent);
+            background: #eef8ff;
+            color: var(--text);
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 14px;
+            align-content: start;
+        }
+
+        .card {
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: var(--panel);
+            padding: 14px;
+            position: relative;
+            transition: box-shadow 0.2s ease, transform 0.2s ease;
+        }
+
+        .card:hover {
+            box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+            transform: translateY(-1px);
+        }
+
+        .card .remove-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: rgba(220, 53, 69, 0.92);
+            color: white;
+            border: none;
+            border-radius: 999px;
+            width: 22px;
+            height: 22px;
+            cursor: pointer;
+            font-size: 14px;
+            line-height: 22px;
+            text-align: center;
+            padding: 0;
+        }
+
+        .tweet-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .profile-image {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            overflow: hidden;
+            background: #667eea;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+
+        .profile-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .username {
+            font-weight: bold;
+            font-size: 14px;
+            line-height: 1.2;
+        }
+
+        .screen-name {
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.2;
+        }
+
+        .tweet-content {
+            margin: 10px 0;
+            line-height: 1.45;
+            font-size: 14px;
+            color: var(--text);
+            word-break: break-word;
+        }
+
+        .tweet {
+            padding: 16px 0;
+            border-bottom: 1px solid var(--border);
+            cursor: grab;
+        }
+
+        .tweet:hover {
+            background: #f8fbff;
+        }
+
+        .tweet.dragging {
+            opacity: 0.6;
+            cursor: grabbing;
+        }
+
+        .dashboard-post {
+            cursor: move;
+            min-height: 220px;
+            padding-top: 38px;
+            height: var(--dashboard-card-h);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .dashboard-post .tweet-header {
+            margin-top: 0;
+        }
+
+        .dashboard-post .tweet-content {
+            flex: 1;
+            margin-top: 8px;
+            margin-bottom: 12px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            display: block;
+        }
+
+        .metrics {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding-top: 10px;
+            border-top: 1px solid var(--border);
+            height: calc(var(--dashboard-card-h) / 4);
+            min-height: calc(var(--dashboard-card-h) / 4);
+            max-height: calc(var(--dashboard-card-h) / 4);
+            box-sizing: border-box;
+        }
+
+        .metric-label {
+            font-size: 11px;
+            color: var(--muted);
+            margin-bottom: 4px;
+        }
+
+        .sentiment {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            font-weight: bold;
+            white-space: nowrap;
+        }
+
+        .sentiment .face {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+
+        .sentiment.positive { color: var(--good); }
+        .sentiment.positive .face { background: rgba(40, 167, 69, 0.12); }
+
+        .sentiment.negative { color: var(--bad); }
+        .sentiment.negative .face { background: rgba(220, 53, 69, 0.12); }
+
+        .sentiment.neutral { color: var(--mid); }
+        .sentiment.neutral .face { background: rgba(0, 123, 255, 0.12); }
+
+        .prediction {
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .prediction .value {
+            font-weight: 800;
+            letter-spacing: 0.2px;
+        }
+
+        .prediction.high .value { color: var(--bad); font-size: 20px; }
+        .prediction.medium .value { color: var(--mid); font-size: 16px; }
+        .prediction.low .value { color: var(--low); font-size: 13px; font-weight: 700; }
+
+        .spinner {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            border: 2px solid rgba(16, 24, 40, 0.18);
+            border-top-color: rgba(16, 24, 40, 0.65);
+            animation: spin 0.8s linear infinite;
+            display: inline-block;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--muted);
+        }
+
+        @media (max-width: 1100px) {
+            body { flex-direction: column; height: auto; }
+            .dashboard, .feed { width: 100%; min-width: 0; height: auto; }
+            .panel-body { max-height: 70vh; }
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <div class="panel-header">
+            <h2>Dashboard</h2>
+            <div class="sub">Drag tweets from the feed into the grid. Positions are saved.</div>
+        </div>
+        <div class="panel-body">
+            <div class="drop-zone" id="dropZone">Drag tweets here to save them</div>
+
+            <div class="dashboard-grid" id="dashboardGrid">
+                {% for saved_post in saved_posts %}
+                    <div class="card dashboard-post" data-tweet-id="{{ saved_post.original_tweet.id }}" data-position-x="{{ saved_post.position_x }}" data-position-y="{{ saved_post.position_y }}">
+                        <button class="remove-btn" onclick="removeFromDashboard(this)">×</button>
+
+                        <div class="tweet-header">
+                            <div class="profile-image">
+                                {% if saved_post.original_tweet.profile_image_url %}
+                                    <img src="{{ saved_post.original_tweet.profile_image_url }}" alt="avatar">
+                                {% else %}
+                                    {{ saved_post.original_tweet.screen_name|first|upper }}
+                                {% endif %}
+                            </div>
+                            <div>
+                                <div class="username">{{ saved_post.original_tweet.username }}</div>
+                                <div class="screen-name">@{{ saved_post.original_tweet.screen_name }}</div>
+                            </div>
+                        </div>
+
+                        <div class="tweet-content">{{ saved_post.original_tweet.content|linebreaksbr }}</div>
+
+                        <div class="metrics">
+                            <div class="sentiment" data-metric="sentiment">
+                                <span class="face" aria-hidden="true">🙂</span>
+                                <span class="label">Positive</span>
+                            </div>
+
+                            <div class="prediction" data-metric="prediction">
+                                <div class="metric-label">Forecast views</div>
+                                <div class="value"><span class="spinner" aria-label="Loading"></span></div>
+                            </div>
+                        </div>
+                    </div>
+                {% empty %}
+                    <div class="empty-state">
+                        <h3 style="margin: 0 0 10px 0;">No saved posts yet</h3>
+                        <div>Drag a tweet from the feed to start building your dashboard.</div>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <div class="feed">
+        <div class="panel-header">
+            <h1>{{ title }}</h1>
+            <div class="sub">Drag any tweet into the dashboard.</div>
+        </div>
+        <div class="panel-body">
+            {% if tweets %}
+                {% for tweet in tweets %}
+                    <div class="tweet" draggable="true" data-tweet-id="{{ tweet.id }}">
+                        <div class="tweet-header">
+                            <div class="profile-image">
+                                {% if tweet.profile_image_url %}
+                                    <img src="{{ tweet.profile_image_url }}" alt="avatar">
+                                {% else %}
+                                    {{ tweet.screen_name|first|upper }}
+                                {% endif %}
+                            </div>
+                            <div>
+                                <div class="username">{{ tweet.username }}</div>
+                                <div class="screen-name">@{{ tweet.screen_name }}</div>
+                            </div>
+                        </div>
+                        <div class="tweet-content">{{ tweet.content|linebreaksbr }}</div>
+                    </div>
+                {% endfor %}
+            {% else %}
+                <div class="empty-state">
+                    <h2 style="margin:0 0 8px 0;">No tweets yet</h2>
+                    <p style="margin:0;">Twitter posts will appear here</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <script>
+        let draggedTweetId = null;
+
+        document.querySelectorAll('.tweet').forEach((tweet) => {
+            tweet.addEventListener('dragstart', (e) => {
+                draggedTweetId = e.currentTarget.dataset.tweetId;
+                e.currentTarget.classList.add('dragging');
+            });
+
+            tweet.addEventListener('dragend', (e) => {
+                e.currentTarget.classList.remove('dragging');
+            });
+        });
+
+        const dropZone = document.getElementById('dropZone');
+        const dashboardGrid = document.getElementById('dashboardGrid');
+
+        function onDragOver(e) {
+            e.preventDefault();
+            dropZone.classList.add('active');
+        }
+
+        function onDragLeave() {
+            dropZone.classList.remove('active');
+        }
+
+        function onDrop(e) {
+            e.preventDefault();
+            dropZone.classList.remove('active');
+            if (draggedTweetId) {
+                saveToDashboard(draggedTweetId);
+            }
+        }
+
+        dropZone.addEventListener('dragover', onDragOver);
+        dropZone.addEventListener('dragleave', onDragLeave);
+        dropZone.addEventListener('drop', onDrop);
+
+        dashboardGrid.addEventListener('dragover', (e) => e.preventDefault());
+        dashboardGrid.addEventListener('drop', (e) => {
+            e.preventDefault();
+            if (draggedTweetId) {
+                saveToDashboard(draggedTweetId);
+            }
+        });
+
+        function nl2br(text) {
+            return String(text || '').replace(/\n/g, '<br>');
+        }
+
+        function createDashboardCardFromTweet(tweetId) {
+            const srcTweet = document.querySelector(`.tweet[data-tweet-id="${tweetId}"]`);
+            if (!srcTweet) return null;
+
+            const username = (srcTweet.querySelector('.username')?.textContent || '').trim();
+            const screenName = (srcTweet.querySelector('.screen-name')?.textContent || '').trim();
+            const contentText = (srcTweet.querySelector('.tweet-content')?.innerText || '').trim();
+            const imgSrc = srcTweet.querySelector('.profile-image img')?.getAttribute('src') || '';
+            const fallbackLetter = (screenName.replace('@', '').trim()[0] || 'U').toUpperCase();
+
+            const card = document.createElement('div');
+            card.className = 'card dashboard-post';
+            card.dataset.tweetId = String(tweetId);
+            card.dataset.positionX = '0';
+            card.dataset.positionY = '0';
+
+            card.innerHTML = `
+                <button class="remove-btn" onclick="removeFromDashboard(this)">×</button>
+
+                <div class="tweet-header">
+                    <div class="profile-image">
+                        ${imgSrc ? `<img src="${imgSrc}" alt="avatar">` : fallbackLetter}
+                    </div>
+                    <div>
+                        <div class="username"></div>
+                        <div class="screen-name"></div>
+                    </div>
+                </div>
+
+                <div class="tweet-content"></div>
+
+                <div class="metrics">
+                    <div class="sentiment" data-metric="sentiment">
+                        <span class="face" aria-hidden="true">🙂</span>
+                        <span class="label">Positive</span>
+                    </div>
+
+                    <div class="prediction" data-metric="prediction">
+                        <div class="metric-label">Forecast views</div>
+                        <div class="value"><span class="spinner" aria-label="Loading"></span></div>
+                    </div>
+                </div>
+            `;
+
+            card.querySelector('.username').textContent = username;
+            card.querySelector('.screen-name').textContent = screenName;
+            card.querySelector('.tweet-content').innerHTML = nl2br(contentText);
+
+            return card;
+        }
+
+        function saveToDashboard(tweetId) {
+            fetch('/save-to-dashboard/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken')
+                },
+                body: JSON.stringify({ tweet_id: tweetId })
+            })
+            .then((response) => response.json())
+            .then((data) => {
+                if (data.success) {
+                    if (data.already_saved) {
+                        const existing = document.querySelector(`.dashboard-post[data-tweet-id="${tweetId}"]`);
+                        if (existing) {
+                            existing.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+                        return;
+                    }
+
+                    const card = createDashboardCardFromTweet(tweetId);
+                    if (!card) {
+                        location.reload();
+                        return;
+                    }
+
+                    dashboardGrid.appendChild(card);
+
+                    // Initialize metrics for this card
+                    setSentimentLoading(card);
+                    ensureForecastSpinner(card);
+
+                    // Start forecast + sentiment only for this card
+                    pollForecast(parseInt(tweetId, 10), card, 0);
+                    pollSentiment(parseInt(tweetId, 10), card, 0);
+                }
+            })
+            .catch(() => {});
+        }
+
+        function removeFromDashboard(button) {
+            const post = button.closest('.dashboard-post');
+            const tweetId = post.dataset.tweetId;
+
+            fetch('/remove-from-dashboard/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken')
+                },
+                body: JSON.stringify({ tweet_id: tweetId })
+            })
+            .then((response) => response.json())
+            .then((data) => {
+                if (data.success) {
+                    post.remove();
+                }
+            })
+            .catch(() => {});
+        }
+
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        function ensureForecastSpinner(card) {
+            const predictionEl = card.querySelector('[data-metric="prediction"]');
+            if (!predictionEl) return;
+            const valueEl = predictionEl.querySelector('.value');
+            if (valueEl && !valueEl.querySelector('.spinner') && card.dataset.forecastState !== 'ready') {
+                valueEl.innerHTML = '<span class="spinner" aria-label="Loading"></span>';
+            }
+        }
+
+        function setSentimentLoading(card) {
+            const sentimentEl = card.querySelector('[data-metric="sentiment"]');
+            if (!sentimentEl) return;
+            const face = sentimentEl.querySelector('.face');
+            const label = sentimentEl.querySelector('.label');
+
+            sentimentEl.classList.remove('positive', 'negative', 'neutral');
+            sentimentEl.classList.add('neutral');
+            if (face) face.textContent = '⏳';
+            if (label) label.textContent = 'Loading';
+        }
+
+        function applySentimentValue(card, score, labelText) {
+            const sentimentEl = card.querySelector('[data-metric="sentiment"]');
+            if (!sentimentEl) return;
+            const face = sentimentEl.querySelector('.face');
+            const label = sentimentEl.querySelector('.label');
+
+            sentimentEl.classList.remove('positive', 'negative', 'neutral');
+
+            const normalizedLabel = String(labelText || '').toLowerCase();
+            if (normalizedLabel === 'positive' || Number(score) > 0) {
+                sentimentEl.classList.add('positive');
+                if (face) face.textContent = '🙂';
+                if (label) label.textContent = 'Positive';
+            } else if (normalizedLabel === 'negative' || Number(score) < 0) {
+                sentimentEl.classList.add('negative');
+                if (face) face.textContent = '🙁';
+                if (label) label.textContent = 'Negative';
+            } else {
+                sentimentEl.classList.add('neutral');
+                if (face) face.textContent = '😐';
+                if (label) label.textContent = 'Neutral';
+            }
+
+            card.dataset.sentimentState = 'ready';
+        }
+
+        function pollSentiment(tweetId, card, attempt) {
+            if (card.dataset.sentimentState === 'ready') return;
+            if (card.dataset.sentimentState === 'polling' && (attempt || 0) === 0) return;
+            card.dataset.sentimentState = 'polling';
+
+            fetch(`/sentiment/${tweetId}/`)
+                .then((r) => r.json())
+                .then((data) => {
+                    if (data.status === 'ready') {
+                        applySentimentValue(card, data.score, data.label);
+                        return;
+                    }
+                    if (data.status === 'error') {
+                        if ((attempt || 0) >= 10) {
+                            applySentimentValue(card, 0, 'neutral');
+                            return;
+                        }
+                    }
+                    const nextAttempt = (attempt || 0) + 1;
+                    setTimeout(() => pollSentiment(tweetId, card, nextAttempt), 400);
+                })
+                .catch(() => {
+                    const nextAttempt = (attempt || 0) + 1;
+                    if (nextAttempt >= 10) {
+                        applySentimentValue(card, 0, 'neutral');
+                        return;
+                    }
+                    setTimeout(() => pollSentiment(tweetId, card, nextAttempt), 600);
+                });
+        }
+
+        function applyInitialMetrics() {
+            const cards = document.querySelectorAll('.dashboard-post');
+            cards.forEach((card) => {
+                setSentimentLoading(card);
+                ensureForecastSpinner(card);
+            });
+        }
+
+        function applyForecastValue(card, views) {
+            const predictionEl = card.querySelector('[data-metric="prediction"]');
+            if (!predictionEl) return;
+            predictionEl.classList.remove('high', 'medium', 'low');
+
+            if (views >= 80000) {
+                predictionEl.classList.add('high');
+            } else if (views >= 8000) {
+                predictionEl.classList.add('medium');
+            } else {
+                predictionEl.classList.add('low');
+            }
+
+            const valueEl = predictionEl.querySelector('.value');
+            if (valueEl) valueEl.textContent = Number(views || 0).toLocaleString();
+
+            card.dataset.forecastState = 'ready';
+        }
+
+        function pollForecast(tweetId, card, attempt) {
+            if (card.dataset.forecastState === 'ready') return;
+            if (card.dataset.forecastState === 'polling' && (attempt || 0) === 0) return;
+            card.dataset.forecastState = 'polling';
+
+            fetch(`/forecast-views/${tweetId}/`)
+                .then((r) => r.json())
+                .then((data) => {
+                    if (data.status === 'ready') {
+                        applyForecastValue(card, data.views);
+                        return;
+                    }
+                    if (data.status === 'error') {
+                        // fallback: keep spinner a bit then show 0
+                        if ((attempt || 0) >= 10) {
+                            applyForecastValue(card, 0);
+                            return;
+                        }
+                    }
+                    const nextAttempt = (attempt || 0) + 1;
+                    setTimeout(() => pollForecast(tweetId, card, nextAttempt), 400);
+                })
+                .catch(() => {
+                    const nextAttempt = (attempt || 0) + 1;
+                    if (nextAttempt >= 10) {
+                        applyForecastValue(card, 0);
+                        return;
+                    }
+                    setTimeout(() => pollForecast(tweetId, card, nextAttempt), 600);
+                });
+        }
+
+        function loadForecastsAsync() {
+            document.querySelectorAll('.dashboard-post').forEach((card) => {
+                const tweetId = parseInt(card.dataset.tweetId || '0', 10);
+                if (!tweetId) return;
+                if (card.dataset.forecastState === 'ready' || card.dataset.forecastState === 'polling') {
+                    return;
+                }
+                ensureForecastSpinner(card);
+                pollForecast(tweetId, card, 0);
+            });
+        }
+
+        function loadSentimentsAsync() {
+            document.querySelectorAll('.dashboard-post').forEach((card) => {
+                const tweetId = parseInt(card.dataset.tweetId || '0', 10);
+                if (!tweetId) return;
+                if (card.dataset.sentimentState === 'ready' || card.dataset.sentimentState === 'polling') {
+                    return;
+                }
+                setSentimentLoading(card);
+                pollSentiment(tweetId, card, 0);
+            });
+        }
+
+        applyInitialMetrics();
+        loadForecastsAsync();
+        loadSentimentsAsync();
+    </script>
+</body>
+</html>
