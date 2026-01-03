@@ -9,6 +9,7 @@ from pathlib import Path
 
 import dill
 import torch
+from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
 
 logger = logging.getLogger(__name__)
 
@@ -54,12 +55,11 @@ def _safe_import_cleaning_deps():
     # Keep imports lazy so the project can still start even if some NLP deps are missing.
     import contractions
 
-    from nltk.corpus import stopwords
     from nltk.stem import WordNetLemmatizer
     from nltk.tokenize import word_tokenize
     from textblob import TextBlob
 
-    return contractions, stopwords, WordNetLemmatizer, word_tokenize, TextBlob
+    return contractions, WordNetLemmatizer, word_tokenize, TextBlob
 
 
 def _remove_punctuation(text: str) -> str:
@@ -94,21 +94,37 @@ def _clean_data(text: str) -> str:
     # Mirrors the referenced ISY503 implementation, but with defensive fallbacks.
     # If nltk/textblob resources are missing, we degrade gracefully.
     try:
-        contractions, stopwords, WordNetLemmatizer, word_tokenize, TextBlob = _safe_import_cleaning_deps()
+        contractions, WordNetLemmatizer, word_tokenize, TextBlob = _safe_import_cleaning_deps()
 
-        stop_words = set(stopwords.words("english"))
-        lemmatizer = WordNetLemmatizer()
+        stop_words = set(ENGLISH_STOP_WORDS)
+
+        try:
+            lemmatizer = WordNetLemmatizer()
+        except Exception:
+            lemmatizer = None
+
+        def _tokenize_words(t: str):
+            try:
+                return word_tokenize(t)
+            except Exception:
+                return t.split()
 
         def remove_stop_words(t: str) -> str:
-            words = word_tokenize(t)
+            words = _tokenize_words(t)
             filtered = [w for w in words if w.lower() not in stop_words]
             return " ".join(filtered)
 
         def correct_spelling(t: str) -> str:
-            return TextBlob(t).correct().string
+            try:
+                return TextBlob(t).correct().string
+            except Exception:
+                return t
 
         def lemmatize_words(t: str) -> str:
-            words = word_tokenize(t)
+            if lemmatizer is None:
+                return t
+
+            words = _tokenize_words(t)
             lemmatized = [lemmatizer.lemmatize(w) for w in words]
             return " ".join(lemmatized)
 
@@ -133,13 +149,13 @@ def _clean_data(text: str) -> str:
 
     except Exception:
         # Minimal fallback cleaning
-        logger.exception("sentiment: clean_data fallback path")
+        logger.warning("sentiment: clean_data fallback path")
         return _remove_specs(_convert_to_lowercase(_remove_extra_whitespace(text)))
 
 
 def _word_tokenizer(text: str):
     try:
-        _, _, _, word_tokenize, _ = _safe_import_cleaning_deps()
+        _, _, word_tokenize, _ = _safe_import_cleaning_deps()
         tokens = word_tokenize(text)
     except Exception:
         tokens = text.split()
