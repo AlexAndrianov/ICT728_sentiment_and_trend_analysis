@@ -164,20 +164,20 @@ def sentiment(request, tweet_id: int):
                     logger.warning("sentiment_view: job_start tweet_id=%s model_id=%s", tid, mid)
                     tweet = TweetPost.objects.get(id=tid)
                     try:
-                        mod = importlib.import_module("predictor_app.sentiment_predictor")
+                        mod = importlib.import_module("predictor_app.nltk_vader_sentiment")
                     except Exception as ie:
-                        logger.exception("sentiment_view: failed to import predictor_app.sentiment_predictor")
+                        logger.exception("sentiment_view: failed to import predictor_app.nltk_vader_sentiment")
                         raise
 
                     predict_fn = getattr(mod, "predict_sentiment", None)
                     if predict_fn is None:
                         attrs = [a for a in dir(mod) if not a.startswith("_")]
                         logger.error(
-                            "sentiment_view: sentiment_predictor module has no predict_sentiment. attrs=%s",
+                            "sentiment_view: nltk_vader_sentiment module has no predict_sentiment. attrs=%s",
                             attrs[:80],
                         )
                         raise ImportError(
-                            f"predict_sentiment not found in predictor_app.sentiment_predictor; available={attrs[:20]}"
+                            f"predict_sentiment not found in predictor_app.nltk_vader_sentiment; available={attrs[:20]}"
                         )
 
                     res = predict_fn(tweet.content or "", mid)
