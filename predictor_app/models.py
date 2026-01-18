@@ -29,6 +29,19 @@ class TweetPost(models.Model):
     emoji_count = models.IntegerField(default=0, help_text="Emoji count")
     uppercase_word_count = models.IntegerField(default=0, help_text="Uppercase word count")
 
+    real_views = models.BigIntegerField(null=True, blank=True, help_text="Real (observed) views from dataset")
+    real_sentiment = models.CharField(
+        max_length=16,
+        default="neutral",
+        choices=[
+            ("negative", "Negative"),
+            ("neutral", "Neutral"),
+            ("positive", "Positive"),
+        ],
+        help_text="Real (observed) sentiment label from dataset",
+    )
+    is_dataset_tweet = models.BooleanField(default=False, help_text="Imported from CSV dataset")
+
     updated_at = models.DateTimeField(auto_now=True, help_text="Record update date")
 
     class Meta:
