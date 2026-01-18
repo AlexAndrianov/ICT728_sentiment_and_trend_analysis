@@ -19,37 +19,65 @@
 
         body {
             font-family: Arial, sans-serif;
-            background: var(--bg);
+            background: linear-gradient(135deg, rgba(66, 153, 225, 0.15) 0%, rgba(159, 122, 234, 0.15) 100%);
             margin: 0;
             display: flex;
             height: 100vh;
             color: var(--text);
+            position: relative;
+            overflow-x: hidden;
+            animation: fadeIn 1s ease-in-out;
+        }
+
+        .background-pattern {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: 
+                radial-gradient(circle at 20% 50%, rgba(66, 153, 225, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 80% 80%, rgba(159, 122, 234, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 40% 20%, rgba(236, 72, 153, 0.15) 0%, transparent 50%);
+            z-index: -1;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
         }
 
         .dashboard {
             width: 66.67%;
-            background: var(--panel);
+            background: rgba(255, 255, 255, 0.95);
             border-right: 1px solid var(--border);
             display: flex;
             flex-direction: column;
             min-width: 520px;
+            backdrop-filter: blur(10px);
         }
 
         .feed {
             width: 33.33%;
-            background: var(--panel);
+            background: rgba(255, 255, 255, 0.95);
             display: flex;
             flex-direction: column;
             min-width: 340px;
+            backdrop-filter: blur(10px);
         }
 
         .panel-header {
             padding: 16px 20px;
             border-bottom: 1px solid var(--border);
-            background: var(--panel);
+            background: rgba(255, 255, 255, 0.98);
             position: sticky;
             top: 0;
             z-index: 2;
+            backdrop-filter: blur(10px);
         }
 
         .panel-header h1,
@@ -96,10 +124,11 @@
         .card {
             border: 1px solid var(--border);
             border-radius: 12px;
-            background: var(--panel);
+            background: rgba(255, 255, 255, 0.95);
             padding: 14px;
             position: relative;
             transition: box-shadow 0.2s ease, transform 0.2s ease;
+            backdrop-filter: blur(10px);
         }
 
         .card:hover {
@@ -314,13 +343,14 @@
     </style>
 </head>
 <body>
+    <div class="background-pattern"></div>
     <div class="dashboard">
         <div class="panel-header">
-            <h2>Dashboard</h2>
+            <h2>ICT 728 Predictor Dashboard</h2>
             <div class="sub">Drag tweets from the feed into the grid. Positions are saved.</div>
         </div>
         <div class="panel-body">
-            <div class="drop-zone" id="dropZone">Drag tweets here to save them</div>
+            <div class="drop-zone" id="dropZone">Drag tweets here to analyze them</div>
 
             <div class="dashboard-grid" id="dashboardGrid">
                 {% for saved_post in saved_posts %}

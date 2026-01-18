@@ -4,14 +4,24 @@ import logging
 import pickle
 import re
 import string
+import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
-import dill
-import torch
 from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("predictor_app")
+
+
+def _clip(s: str, n: int = 240) -> str:
+    try:
+        s2 = str(s)
+    except Exception:
+        return "<unprintable>"
+    if len(s2) <= n:
+        return s2
+    return s2[:n] + "…"
 
 
 @dataclass(frozen=True)
@@ -33,6 +43,8 @@ _NB_MODEL = None
 _SK_MODEL = None
 _PT_MODEL = None
 _PT_VOCAB = None
+_PT_LOCK = threading.Lock()
+_PT_WARMED = False
 
 
 def _artifact_dir() -> Path:
@@ -172,8 +184,13 @@ def _load_nb_model():
         return _NB_MODEL
 
     path = _nb_path()
-    with open(path, "rb") as f:
-        _NB_MODEL = pickle.load(f)
+    logger.info("sentiment: loading NB model from %s", path)
+    try:
+        with open(path, "rb") as f:
+            _NB_MODEL = pickle.load(f)
+    except Exception:
+        logger.exception("sentiment: failed to load NB model from %s", path)
+        raise
     return _NB_MODEL
 
 
@@ -183,12 +200,26 @@ def _load_sk_model():
         return _SK_MODEL
 
     path = _sk_path()
-    with open(path, "rb") as f:
-        _SK_MODEL = pickle.load(f)
+    logger.info("sentiment: loading sklearn model from %s", path)
+    try:
+        with open(path, "rb") as f:
+            _SK_MODEL = pickle.load(f)
+    except Exception:
+        logger.exception("sentiment: failed to load sklearn model from %s", path)
+        raise
     return _SK_MODEL
 
 
 def _pytorch_preprocess_text(text: str, vocab: dict, max_length: int = 1024):
+    try:
+        import torch
+    except Exception as e:
+        raise ModuleNotFoundError(
+            "PyTorch sentiment model selected but 'torch' is not installed. Install torch or switch model."
+        ) from e
+
+    t0 = time.perf_counter()
+
     tokens = text.split()
     indices = [vocab.get(tok, vocab.get("<unk>", 0)) for tok in tokens]
 
@@ -198,15 +229,42 @@ def _pytorch_preprocess_text(text: str, vocab: dict, max_length: int = 1024):
     else:
         indices = indices[:max_length]
 
-    return torch.tensor(indices, dtype=torch.long).unsqueeze(0)
+    out = torch.tensor(indices, dtype=torch.long).unsqueeze(0)
+    dt_ms = int((time.perf_counter() - t0) * 1000)
+    logger.warning(
+        "sentiment: pytorch_preprocess tokens_n=%s max_length=%s took_ms=%s",
+        len(tokens),
+        max_length,
+        dt_ms,
+    )
+    return out
 
 
 def _pytorch_predict(model, text: str, vocab: dict) -> int:
+    try:
+        import torch
+    except Exception as e:
+        raise ModuleNotFoundError(
+            "PyTorch sentiment model selected but 'torch' is not installed. Install torch or switch model."
+        ) from e
+
+    t0 = time.perf_counter()
     model.eval()
     with torch.no_grad():
         input_tensor = _pytorch_preprocess_text(text, vocab)
+        t1 = time.perf_counter()
         output = model(input_tensor)
+        t2 = time.perf_counter()
         _, predicted = torch.max(output, 1)
+        t3 = time.perf_counter()
+
+        logger.warning(
+            "sentiment: pytorch_forward took_ms=%s max took_ms=%s total_ms=%s",
+            int((t2 - t1) * 1000),
+            int((t3 - t2) * 1000),
+            int((t3 - t0) * 1000),
+        )
+
         return int(predicted.item())
 
 
@@ -215,14 +273,53 @@ def _load_pytorch_model_and_vocab():
     if _PT_MODEL is not None and _PT_VOCAB is not None:
         return _PT_MODEL, _PT_VOCAB
 
-    path = _pt_path()
-    with open(path, "rb") as f:
-        data = dill.load(f)
+    with _PT_LOCK:
+        if _PT_MODEL is not None and _PT_VOCAB is not None:
+            return _PT_MODEL, _PT_VOCAB
 
-    _PT_MODEL = data["model"]
-    _PT_VOCAB = data["vocab"]
-    _PT_MODEL.eval()
-    return _PT_MODEL, _PT_VOCAB
+        path = _pt_path()
+        logger.warning("sentiment: loading pytorch model+vocab from %s", path)
+        try:
+            try:
+                import dill
+            except Exception as e:
+                raise ModuleNotFoundError(
+                    "PyTorch sentiment model selected but 'dill' is not installed. Install dill or switch model."
+                ) from e
+
+            with open(path, "rb") as f:
+                data = dill.load(f)
+        except Exception:
+            logger.exception("sentiment: failed to load pytorch model+vocab from %s", path)
+            raise
+
+        _PT_MODEL = data["model"]
+        _PT_VOCAB = data["vocab"]
+        _PT_MODEL.eval()
+
+        global _PT_WARMED
+        if not _PT_WARMED:
+            try:
+                import torch
+
+                # Limit threads to avoid oversubscription stalls on some setups.
+                try:
+                    torch.set_num_threads(1)
+                    torch.set_num_interop_threads(1)
+                except Exception:
+                    pass
+
+                t0 = time.perf_counter()
+                with torch.no_grad():
+                    dummy = torch.zeros((1, 1024), dtype=torch.long)
+                    _ = _PT_MODEL(dummy)
+                dt_ms = int((time.perf_counter() - t0) * 1000)
+                logger.warning("sentiment: pytorch_warmup took_ms=%s", dt_ms)
+                _PT_WARMED = True
+            except Exception:
+                logger.exception("sentiment: pytorch_warmup failed")
+
+        return _PT_MODEL, _PT_VOCAB
 
 
 def _score_to_result(score: int) -> SentimentResult:
@@ -242,13 +339,21 @@ def _normalize_binary_prediction(pred) -> int:
 
     if isinstance(pred, (int, float)):
         try:
-            return -1 if int(pred) == 0 else 1
+            v = int(pred)
+            if v in {-1, 0, 1}:
+                return v
+            if v in {0, 1, 2}:
+                # Common 3-class encoding: 0=negative, 1=neutral, 2=positive
+                return {-1: -1, 0: -1, 1: 0, 2: 1}[v]
+            return 0
         except Exception:
             return 0
 
     s = str(pred).strip().lower()
     if s in {"0", "neg", "negative", "-1"}:
         return -1
+    if s in {"2", "neu", "neutral"}:
+        return 0
     if s in {"1", "pos", "positive", "+1"}:
         return 1
 
@@ -262,33 +367,66 @@ def predict_sentiment(text: str, model_id: int) -> SentimentResult:
         return _score_to_result(0)
 
     clean_text = _clean_data(raw_text)
-    logger.info("sentiment: model_id=%s text_len=%s clean_len=%s", model_id, len(raw_text), len(clean_text))
+    logger.warning(
+        "sentiment: model_id=%s text_len=%s clean_len=%s raw=%r clean=%r",
+        model_id,
+        len(raw_text),
+        len(clean_text),
+        _clip(raw_text),
+        _clip(clean_text),
+    )
 
     try:
         if int(model_id) == 1:
             model = _load_nb_model()
-            pred = model.classify(_to_features(_word_tokenizer(clean_text)))
-            logger.info("sentiment: raw_pred nb=%r", pred)
+            tokens = _word_tokenizer(clean_text)
+            feats = _to_features(tokens)
+            logger.warning(
+                "sentiment: nb_input tokens_n=%s tokens_head=%r feats_n=%s",
+                len(tokens),
+                tokens[:25],
+                len(feats),
+            )
+
+            pred = model.classify(feats)
+            logger.warning("sentiment: raw_pred nb=%r pred_type=%s", pred, type(pred).__name__)
             score = _normalize_binary_prediction(pred)
-            return _score_to_result(score)
+            res = _score_to_result(score)
+            logger.warning("sentiment: normalized nb score=%s label=%s", res.score, res.label)
+            return res
 
         if int(model_id) == 2:
             model = _load_sk_model()
+            logger.info("sentiment: sklearn_input clean=%r", _clip(clean_text))
             pred = model.predict([clean_text])
-            logger.info("sentiment: raw_pred sklearn=%r", pred)
+            logger.info("sentiment: raw_pred sklearn=%r pred_type=%s", pred, type(pred).__name__)
             first = pred[0] if hasattr(pred, "__len__") and len(pred) else pred
             score = _normalize_binary_prediction(first)
-            return _score_to_result(score)
+            res = _score_to_result(score)
+            logger.info("sentiment: normalized sklearn score=%s label=%s", res.score, res.label)
+            return res
 
         if int(model_id) == 3:
-            model, vocab = _load_pytorch_model_and_vocab()
-            pred = _pytorch_predict(model, clean_text, vocab)
-            logger.info("sentiment: raw_pred pytorch=%r", pred)
-            score = _normalize_binary_prediction(pred)
-            return _score_to_result(score)
+#            model, vocab = _load_pytorch_model_and_vocab()
+#            logger.warning(
+#                "sentiment: pytorch_input clean=%r vocab_size=%s",
+#                _clip(clean_text),
+#                len(vocab) if vocab else 0,
+#            )
+#            pred = _pytorch_predict(model, clean_text, vocab)
+#            logger.warning("sentiment: raw_pred pytorch=%r pred_type=%s", pred, type(pred).__name__)
+#            score = _normalize_binary_prediction(pred)
+#            res = _score_to_result(score)
+#            logger.warning("sentiment: normalized pytorch score=%s label=%s", res.score, res.label)
+            return 0
 
         raise ValueError(f"Unknown sentiment model_id: {model_id}")
 
     except Exception:
-        logger.exception("sentiment: prediction failed model_id=%s", model_id)
+        logger.exception(
+            "sentiment: prediction failed model_id=%s raw=%r clean=%r",
+            model_id,
+            _clip(raw_text),
+            _clip(clean_text),
+        )
         return _score_to_result(0)

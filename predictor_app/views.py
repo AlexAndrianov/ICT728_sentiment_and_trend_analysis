@@ -5,6 +5,10 @@ from django.views.decorators.http import require_http_methods
 import json
 from .models import TweetPost, SavedPost
 
+import logging
+import time
+import importlib
+
 from concurrent.futures import Future, ThreadPoolExecutor
 import threading
 
@@ -16,6 +20,8 @@ _FORECAST_FUTURES: dict[int, Future] = {}
 _SENTIMENT_EXECUTOR = ThreadPoolExecutor(max_workers=4)
 _SENTIMENT_LOCK = threading.Lock()
 _SENTIMENT_FUTURES: dict[tuple[int, int], Future] = {}
+
+logger = logging.getLogger("predictor_app")
 
 
 def tweet_list(request):
@@ -30,6 +36,11 @@ def tweet_list(request):
     }
     
     return render(request, 'predictor_app/tweet_list.html', context)
+
+
+def landing(request):
+    """Landing page for social media analytics platform"""
+    return render(request, 'predictor_app/landing.html')
 
 
 def index(request):
@@ -110,6 +121,7 @@ def forecast_views(request, tweet_id: int):
                 _FORECAST_FUTURES[tweet_id_int] = fut
 
         if not fut.done():
+            logger.warning("forecast_view: pending tweet_id=%s", tweet_id_int)
             return JsonResponse({'status': 'pending'})
 
         err = fut.exception()
@@ -148,14 +160,41 @@ def sentiment(request, tweet_id: int):
             fut = _SENTIMENT_FUTURES.get(cache_key)
             if fut is None or fut.cancelled():
                 def _job(tid: int, mid: int) -> dict:
+                    t0 = time.time()
+                    logger.warning("sentiment_view: job_start tweet_id=%s model_id=%s", tid, mid)
                     tweet = TweetPost.objects.get(id=tid)
-                    from .sentiment_predictor import predict_sentiment
+                    try:
+                        mod = importlib.import_module("predictor_app.sentiment_predictor")
+                    except Exception as ie:
+                        logger.exception("sentiment_view: failed to import predictor_app.sentiment_predictor")
+                        raise
 
-                    res = predict_sentiment(tweet.content or "", mid)
+                    predict_fn = getattr(mod, "predict_sentiment", None)
+                    if predict_fn is None:
+                        attrs = [a for a in dir(mod) if not a.startswith("_")]
+                        logger.error(
+                            "sentiment_view: sentiment_predictor module has no predict_sentiment. attrs=%s",
+                            attrs[:80],
+                        )
+                        raise ImportError(
+                            f"predict_sentiment not found in predictor_app.sentiment_predictor; available={attrs[:20]}"
+                        )
+
+                    res = predict_fn(tweet.content or "", mid)
+                    dt_ms = int((time.time() - t0) * 1000)
+                    logger.warning(
+                        "sentiment_view: job_done tweet_id=%s model_id=%s score=%s label=%s took_ms=%s",
+                        tid,
+                        mid,
+                        int(res.score),
+                        str(res.label),
+                        dt_ms,
+                    )
                     return {"score": int(res.score), "label": str(res.label)}
 
                 fut = _SENTIMENT_EXECUTOR.submit(_job, tweet_id_int, model_id)
                 _SENTIMENT_FUTURES[cache_key] = fut
+                logger.warning("sentiment_view: job_submitted tweet_id=%s model_id=%s", tweet_id_int, model_id)
 
         if not fut.done():
             return JsonResponse({'status': 'pending'})
@@ -164,14 +203,23 @@ def sentiment(request, tweet_id: int):
         if err is not None:
             with _SENTIMENT_LOCK:
                 _SENTIMENT_FUTURES.pop(cache_key, None)
+            logger.warning("sentiment_view: error tweet_id=%s model_id=%s err=%r", tweet_id_int, model_id, err)
             return JsonResponse({'status': 'error', 'error': str(err)})
 
         out = fut.result() or {}
         # Drop completed future to avoid serving stale results after code/model changes.
         with _SENTIMENT_LOCK:
             _SENTIMENT_FUTURES.pop(cache_key, None)
+        logger.warning(
+            "sentiment_view: ready tweet_id=%s model_id=%s score=%s label=%s",
+            tweet_id_int,
+            model_id,
+            out.get("score"),
+            out.get("label"),
+        )
         return JsonResponse({'status': 'ready', **out})
     except Exception as e:
+        logger.exception("sentiment_view: exception tweet_id=%r", tweet_id)
         return JsonResponse({'status': 'error', 'error': str(e)})
 
 
