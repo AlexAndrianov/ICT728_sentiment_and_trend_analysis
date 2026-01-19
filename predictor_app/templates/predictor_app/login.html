@@ -1,0 +1,52 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Login to your account</title>
+    <link rel="stylesheet" href="{% static 'css/login.css' %}" />
+
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+      integrity="sha384-4bw+/aepP/YC94hEpVNVgiZdgIC5+VKNBQNGCHeKRQN+PtmoHDEXuppvnDJzQIu9"
+      crossorigin="anonymous"
+    />
+  </head>
+
+  <body>
+    <header>
+      <h1>Smart Social Media Analytics Platform</h1>
+      <p class="subtitle">Trend Prediction For Digital Age</p>
+    </header>
+    <div class="login-form">
+      <div class="head">
+        <h1>Login</h1>
+      </div>
+      <div class="content">
+        <div class="input-field">
+          <input type="email" name="email" placeholder="Email" />
+        </div>
+        <div class="input-field">
+          <input type="pass" name="pass" placeholder="Password" />
+        </div>
+        <br />
+        <select id="menuX" name="ctype">
+          <option value="administrator">Administrator</option>
+          <option value="researcher">Researcher</option>
+        </select>
+        <br />
+        <a href="#" class="link">Forgot Your Password?</a>
+      </div>
+      <div class="action">
+        <a type="submit" href="{% url 'landing' %}" value="submit">Log in</a>
+      </div>
+    </div>
+    <script
+      src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/js/bootstrap.bundle.min.js"
+      integrity="sha384-HwwvtgBNo3bZJJLYd8oVXjrBZt8cqVSpeBNS5n7C8IVInixGAoxmnlMuBnhbgrkm"
+      crossorigin="anonymous"
+    ></script>
+  </body>
+</html>

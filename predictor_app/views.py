@@ -37,6 +37,8 @@ def tweet_list(request):
     
     return render(request, 'predictor_app/tweet_list.html', context)
 
+def login(request):
+    return render(request, 'predictor_app/login.html')
 
 def landing(request):
     """Landing page for social media analytics platform"""
