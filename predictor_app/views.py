@@ -44,6 +44,10 @@ def landing(request):
     """Landing page for social media analytics platform"""
     return render(request, 'predictor_app/landing.html')
 
+def trends(request):
+    """Trends dashboard page"""
+    return render(request, 'predictor_app/trends.html')
+
 
 def index(request):
     tweets = TweetPost.objects.all()
