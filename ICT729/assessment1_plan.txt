@@ -1,0 +1,50 @@
+Our assessment doc:
+https://docs.google.com/document/d/1j8cZZx_vGu4Mlmu1simolUsLXiHMc0glnadQSZ9lGdI/edit?usp=sharing.  
+
+So we have to prepare document like this:
+https://moodle.koi.edu.au/moodle/mod/resource/view.php?id=343192.  
+
+1) @~SŸEDÃ  Please prepare document structure and take:
+- Introduction
+- Objectives
+- Duration and Completion of the Project
+- Team Involved and Tasks
+
+2) Me:
+- Back-End Development
+- Work Breakdown Structure
+- Gantt Chart
+
+3) Marjia:
+- Implementation
+-- Prototype Design
+
+4) Khan:
+-- Front-End Development
+- Testing
+
+5) Zilani
+- Database Design
+- Conclusion
+- References
+
+Our project work for this subject:
+https://miro.com/app/board/uXjVG19XthU=/
+
+Firstly, two nearest weeks we have to prepare design and workflow algorithms:
+
+1) Khan:
+You have to prepare Admin and analyst roles for controlled access - basic design and how it will work (draw couple prototype slides) 
+
+2) @~SŸEDÃ
+You need work on design Multi-platform integration (Twitter, Reddit, Instagram).
+
+3) Marjia + @~SŸEDÃ 
+You have to prepare design of "Predictive analytics to forecast trends in topics or hashtags"
+Schematic prototype to describe user 
+
+4) Me
+I will prepare backend algoritmns for "Predictive analytics to forecast trends in topics or hashtags"
+
+5) Zilani
+You have to prepare design and user flows for User Notifications and together with Khan prepare design for Reporting system.

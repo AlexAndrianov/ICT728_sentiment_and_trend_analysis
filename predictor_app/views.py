@@ -46,7 +46,81 @@ def landing(request):
 
 def trends(request):
     """Trends dashboard page"""
-    return render(request, 'predictor_app/trends.html')
+    import json
+    from django.core.serializers.json import DjangoJSONEncoder
+    from collections import defaultdict
+    import re
+    
+    tweets = TweetPost.objects.all()
+    
+    # Convert to JSON-safe format
+    tweets_data = []
+    for tweet in tweets:
+        tweets_data.append({
+            'id': tweet.id,
+            'username': tweet.username,
+            'screen_name': tweet.screen_name,
+            'content': tweet.content,
+            'profile_image_url': tweet.profile_image_url,
+            'is_dataset_tweet': tweet.is_dataset_tweet,
+            'real_sentiment': tweet.real_sentiment,
+            'real_views': tweet.real_views,
+            'hashtags': tweet.hashtags,
+        })
+    
+    # Group tweets by hashtags and calculate forecast views
+    hashtag_groups = defaultdict(list)
+    for tweet in tweets:
+        if tweet.hashtags:
+            hashtags_list = [tag.strip() for tag in tweet.hashtags.split(',') if tag.strip()]
+            for hashtag in hashtags_list:
+                hashtag_groups[hashtag].append(tweet)
+    
+    # Calculate total forecast views for each hashtag (parallel processing)
+    import concurrent.futures
+    from .trend_predictor import predict_views_for_tweet
+    
+    hashtag_stats = []
+    for hashtag, tweet_list in hashtag_groups.items():
+        # Calculate forecast views in parallel
+        def get_tweet_views(tweet):
+            try:
+                predicted_views = predict_views_for_tweet(tweet)
+                return int(predicted_views or 0)
+            except:
+                return 0
+        
+        # Use ThreadPoolExecutor for parallel processing
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            # Submit all tasks
+            future_to_tweet = {executor.submit(get_tweet_views, tweet): tweet for tweet in tweet_list}
+            
+            # Collect results
+            total_views = 0
+            for future in concurrent.futures.as_completed(future_to_tweet):
+                try:
+                    views = future.result(timeout=10)  # 10 second timeout
+                    total_views += views
+                except Exception as e:
+                    print(f"Error calculating views for tweet: {e}")
+                    total_views += 0
+        
+        hashtag_stats.append({
+            'title': hashtag,
+            'engagement': f"{len(tweet_list)} posts",
+            'total_views': total_views,
+            'growth': f"+{len(tweet_list) * 5}%"  # Simplified growth calculation
+        })
+    
+    # Sort by total views (descending)
+    hashtag_stats.sort(key=lambda x: x['total_views'], reverse=True)
+    
+    context = {
+        'tweets_json': json.dumps(tweets_data, cls=DjangoJSONEncoder),
+        'hashtag_stats_json': json.dumps(hashtag_stats, cls=DjangoJSONEncoder),
+    }
+    
+    return render(request, 'predictor_app/trends.html', context)
 
 
 def index(request):

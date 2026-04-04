@@ -30,6 +30,7 @@ class TweetPost(models.Model):
     uppercase_word_count = models.IntegerField(default=0, help_text="Uppercase word count")
 
     real_views = models.BigIntegerField(null=True, blank=True, help_text="Real (observed) views from dataset")
+    hashtags = models.TextField(blank=True, help_text="Comma-separated hashtags from tweet")
     real_sentiment = models.CharField(
         max_length=16,
         default="neutral",

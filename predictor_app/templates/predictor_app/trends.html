@@ -135,6 +135,48 @@
             font-weight: 500;
         }
 
+        .page-freeze-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.95);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+            backdrop-filter: blur(5px);
+        }
+
+        .page-freeze-overlay.active {
+            display: flex;
+        }
+
+        .main-spinner {
+            width: 20vh;
+            height: 20vh;
+            border: 8px solid rgba(29, 161, 242, 0.1);
+            border-top: 8px solid #1da1f2;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .freeze-message {
+            position: absolute;
+            bottom: 30%;
+            text-align: center;
+            color: var(--text);
+            font-size: 16px;
+            font-weight: 600;
+        }
+
         .viral-trends-footer {
             padding: 13px 20px;
             border-top: 1px solid var(--border);
@@ -183,26 +225,34 @@
             gap: 6px;
             height: calc(100vh - 66px);
             padding: 16px 20px;
+            overflow-y: auto;
         }
 
         .trend-column {
-            background: rgba(255, 255, 255, 0.8);
-            border: 2px dashed var(--border);
+            background: rgba(255, 255, 255, 0.6);
+            border: 1px dashed var(--border);
             border-radius: 8px;
-            padding: 4px;
+            padding: 8px;
             min-height: 200px;
-            transition: all 0.3s ease;
+            max-height: none;
+            height: calc(100vh - 150px);
+            transition: all 0.2s ease;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
         }
 
         .trend-column.drag-over {
-            background: rgba(66, 153, 225, 0.1);
-            border-color: var(--accent);
-            border-style: solid;
+            background: rgba(29, 161, 242, 0.1);
+            border-color: #1da1f2;
         }
 
-        .trend-card {
-            background: var(--panel);
+        .trend-post-card {
+            background: rgba(255, 255, 255, 0.95);
             border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 8px;
             border-radius: 6px;
             padding: 6px;
             margin-bottom: 4px;
@@ -327,6 +377,12 @@
 </head>
 <body>
     <div class="background-pattern"></div>
+    
+    <!-- Page freeze overlay -->
+    <div class="page-freeze-overlay" id="page-freeze-overlay">
+        <div class="main-spinner"></div>
+        <div class="freeze-message">Calculating forecasts and sentiment analysis...</div>
+    </div>
 
     <div class="trends-dashboard">
         <div class="panel-header">
@@ -389,23 +445,8 @@
             { title: "Online Education", engagement: "398K", growth: "+3%" }
         ];
 
-        const viralHashtags = [
-            { title: "#AI2024", engagement: "3.1M", growth: "+52%" },
-            { title: "#SustainableTech", engagement: "2.4M", growth: "+38%" },
-            { title: "#Crypto", engagement: "2.1M", growth: "+31%" },
-            { title: "#RemoteWork", engagement: "1.8M", growth: "+25%" },
-            { title: "#MentalHealth", engagement: "1.5M", growth: "+22%" },
-            { title: "#EVs", engagement: "1.3M", growth: "+19%" },
-            { title: "#SpaceTech", engagement: "1.1M", growth: "+16%" },
-            { title: "#ClimateAction", engagement: "987K", growth: "+14%" },
-            { title: "#Privacy", engagement: "876K", growth: "+12%" },
-            { title: "#Metaverse", engagement: "765K", growth: "+10%" },
-            { title: "#PlantBased", engagement: "698K", growth: "+9%" },
-            { title: "#FitnessTech", engagement: "634K", growth: "+8%" },
-            { title: "#Streaming", engagement: "587K", growth: "+7%" },
-            { title: "#SmartHome", engagement: "543K", growth: "+6%" },
-            { title: "#EdTech", engagement: "498K", growth: "+5%" }
-        ];
+        // Dynamic hashtags from backend
+        const viralHashtags = {{ hashtag_stats_json|safe }};
 
         let isHashtagMode = false;
 
@@ -488,10 +529,17 @@
                 itemCard.className = isHashtagMode ? 'viral-trend-item' : 'viral-trend-item';
                 itemCard.draggable = true;
                 itemCard.dataset.itemId = index + 1;
+                
+                // Format views for hashtags
+                let engagementDisplay = item.engagement;
+                if (isHashtagMode && item.total_views) {
+                    engagementDisplay = `${(item.total_views / 1000000).toFixed(1)}M views`;
+                }
+                
                 itemCard.innerHTML = `
                     <div class="trend-title">${item.title}</div>
                     <div class="trend-stats">
-                        <span>${item.engagement}</span>
+                        <span>${engagementDisplay}</span>
                         <span class="trend-engagement">${item.growth}</span>
                     </div>
                 `;
@@ -506,6 +554,9 @@
 
         // Initialize search and trends when page loads
         document.addEventListener('DOMContentLoaded', function() {
+            // Show spinner immediately when page starts loading
+            showPageFreeze();
+            
             // Initialize trends search
             const searchInput = document.getElementById('trends-search-input');
             if (searchInput) {
@@ -516,12 +567,253 @@
             
             // Initialize trends
             initializeTrends();
+            
+            // Start automatic calculation for all dashboard posts
+            startAutomaticCalculation();
         });
 
+        // Page freeze management
+        function showPageFreeze() {
+            const overlay = document.getElementById('page-freeze-overlay');
+            if (overlay) {
+                overlay.classList.add('active');
+            }
+        }
+
+        function hidePageFreeze() {
+            const overlay = document.getElementById('page-freeze-overlay');
+            if (overlay) {
+                overlay.classList.remove('active');
+            }
+        }
+
+        // Automatic calculation for all posts
+        function startAutomaticCalculation() {
+            // Get saved posts from Django template context
+            calculateFromSavedPosts();
+        }
+
+        function calculateFromSavedPosts() {
+            // Get all tweets from Django template context as JSON
+            const tweetsData = {{ tweets_json|safe }};
+            
+            if (tweetsData && tweetsData.length > 0) {
+                // Spinner is already shown from DOMContentLoaded
+                const tweetIds = tweetsData.map(tweet => tweet.id);
+                calculateAllPosts(tweetIds);
+            } else {
+                hidePageFreeze();
+            }
+        }
+
+        function calculateAllPosts(tweetIds) {
+            let completedCalculations = 0;
+            const totalCalculations = tweetIds.length * 2; // forecast + sentiment for each post
+
+            if (tweetIds.length === 0) {
+                hidePageFreeze();
+                return;
+            }
+
+            tweetIds.forEach(tweetId => {
+                // Start forecast calculation
+                fetch(`/forecast-views/${tweetId}/`)
+                    .then(response => response.json())
+                    .then(data => {
+                        completedCalculations++;
+                        updateProgress(completedCalculations, totalCalculations);
+                    })
+                    .catch(error => {
+                        completedCalculations++;
+                        updateProgress(completedCalculations, totalCalculations);
+                    });
+
+                // Start sentiment calculation
+                fetch(`/sentiment/${tweetId}/`)
+                    .then(response => response.json())
+                    .then(data => {
+                        completedCalculations++;
+                        updateProgress(completedCalculations, totalCalculations);
+                    })
+                    .catch(error => {
+                        completedCalculations++;
+                        updateProgress(completedCalculations, totalCalculations);
+                    });
+            });
+        }
+
+        function updateProgress(completed, total) {
+            const message = document.querySelector('.freeze-message');
+            if (message) {
+                message.textContent = 'Calculating forecasts and sentiment analysis...';
+            }
+
+            if (completed >= total) {
+                // Add a minimum delay to show the spinner
+                setTimeout(() => {
+                    hidePageFreeze();
+                }, 3000); // Show spinner for at least 3 seconds
+            }
+        }
+
         let draggedElement = null;
+        let draggedType = null; // 'trend' or 'post'
+
+        function createTrendPostCard(tweet) {
+            const card = document.createElement('div');
+            card.className = 'trend-post-card';
+            card.draggable = true;
+            card.dataset.tweetId = tweet.id;
+            
+            const avatarLetter = (tweet.screen_name || '').replace('@', '').trim()[0] || 'U';
+            const avatarContent = tweet.profile_image_url ? 
+                `<img src="${tweet.profile_image_url}" alt="avatar">` : 
+                avatarLetter.toUpperCase();
+            
+            card.innerHTML = `
+                <div class="trend-post-header">
+                    <div class="trend-post-avatar">${avatarContent}</div>
+                    <div class="trend-post-user">
+                        <div class="trend-post-username">${tweet.username}</div>
+                        <div class="trend-post-screenname">${tweet.screen_name}</div>
+                    </div>
+                </div>
+                <div class="trend-post-content">${tweet.content}</div>
+                <div class="trend-post-metrics">
+                    <div class="trend-post-sentiment" data-sentiment-state="loading">
+                        <span class="face">⏳</span>
+                        <span class="label">Loading...</span>
+                    </div>
+                    <div class="trend-post-forecast" data-forecast-state="loading">
+                        <div class="label">Forecast views</div>
+                        <div class="value"><span class="spinner">⏳</span></div>
+                    </div>
+                </div>
+            `;
+            
+            // Add drag event listeners
+            card.addEventListener('dragstart', handlePostDragStart);
+            card.addEventListener('dragend', handlePostDragEnd);
+            
+            // Load metrics for this card
+            loadPostMetrics(card, tweet.id);
+            
+            return card;
+        }
+
+        function loadPostMetrics(card, tweetId) {
+            // Load sentiment
+            fetch(`/sentiment/${tweetId}/`)
+                .then(response => response.json())
+                .then(data => {
+                    const sentimentDiv = card.querySelector('.trend-post-sentiment');
+                    if (data.sentiment) {
+                        sentimentDiv.className = `trend-post-sentiment ${data.sentiment}`;
+                        const face = data.sentiment === 'positive' ? '😊' : 
+                                   data.sentiment === 'negative' ? '😞' : '😐';
+                        const label = data.sentiment.charAt(0).toUpperCase() + data.sentiment.slice(1);
+                        sentimentDiv.innerHTML = `<span class="face">${face}</span><span class="label">${label}</span>`;
+                    }
+                })
+                .catch(() => {
+                    const sentimentDiv = card.querySelector('.trend-post-sentiment');
+                    sentimentDiv.className = 'trend-post-sentiment neutral';
+                    sentimentDiv.innerHTML = '<span class="face">😐</span><span class="label">Neutral</span>';
+                });
+            
+            // Load forecast views
+            fetch(`/forecast-views/${tweetId}/`)
+                .then(response => response.json())
+                .then(data => {
+                    const forecastDiv = card.querySelector('.trend-post-forecast');
+                    if (data.views !== undefined) {
+                        forecastDiv.innerHTML = `<div class="label">Forecast views</div><div class="value">${data.views.toLocaleString()}</div>`;
+                    }
+                })
+                .catch(() => {
+                    const forecastDiv = card.querySelector('.trend-post-forecast');
+                    forecastDiv.innerHTML = '<div class="label">Forecast views</div><div class="value">-</div>';
+                });
+        }
+
+        function addPostsToTrendColumn(trendTitle, column) {
+            // Get tweets for this hashtag
+            const tweets = {{ tweets_json|safe }};
+            const hashtagTweets = tweets.filter(tweet => {
+                if (!tweet.hashtags) return false;
+                const tweetHashtags = tweet.hashtags.split(',').map(h => h.trim().toLowerCase());
+                return tweetHashtags.includes(trendTitle.toLowerCase());
+            });
+            
+            // Find the trend card in this column
+            const trendCard = column.querySelector('.trend-card');
+            
+            // Create cards and add to column AFTER the trend card
+            hashtagTweets.forEach(tweet => {
+                const card = createTrendPostCard(tweet);
+                if (trendCard) {
+                    column.insertBefore(card, trendCard.nextSibling);
+                } else {
+                    column.appendChild(card);
+                }
+            });
+            
+            // Sort immediately, then re-sort after metrics load
+            sortColumnCards(column);
+            
+            // Re-sort after metrics are loaded
+            setTimeout(() => {
+                sortColumnCards(column);
+            }, 5000);
+        }
+
+        function sortColumnCards(column) {
+            const cards = Array.from(column.querySelectorAll('.trend-post-card'));
+            
+            cards.sort((a, b) => {
+                const aValue = parseInt(a.querySelector('.trend-post-forecast .value')?.textContent.replace(/,/g, '') || '0');
+                const bValue = parseInt(b.querySelector('.trend-post-forecast .value')?.textContent.replace(/,/g, '') || '0');
+                return bValue - aValue; // Descending order
+            });
+            
+            // Get the trend card (should be first)
+            const trendCard = column.querySelector('.trend-card');
+            
+            // Clear only post cards from column
+            const postCards = column.querySelectorAll('.trend-post-card');
+            postCards.forEach(card => card.remove());
+            
+            // Re-append sorted post cards after trend card
+            if (trendCard) {
+                cards.forEach(card => column.insertBefore(card, trendCard.nextSibling));
+            } else {
+                cards.forEach(card => column.appendChild(card));
+            }
+        }
+
+        function handlePostDragStart(e) {
+            draggedElement = e.target;
+            draggedType = 'post';
+            e.target.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+        }
+
+        function handlePostDragEnd(e) {
+            e.target.classList.remove('dragging');
+            document.querySelectorAll('.trend-column').forEach(col => {
+                col.classList.remove('drag-over');
+            });
+        }
 
         function handleDragStart(e) {
             draggedElement = e.target;
+            if (e.target.classList.contains('trend-post-card')) {
+                draggedType = 'post';
+            } else if (e.target.classList.contains('trend-card')) {
+                draggedType = 'trend-card';
+            } else {
+                draggedType = 'trend';
+            }
             e.target.classList.add('dragging');
             e.dataTransfer.effectAllowed = 'move';
             e.dataTransfer.setData('text/html', e.target.innerHTML);
@@ -563,29 +855,59 @@
         }
 
         function handleDrop(e) {
-            if (e.stopPropagation) {
-                e.stopPropagation();
-            }
             e.preventDefault();
             
             const column = e.target.closest('.trend-column');
-            column.classList.remove('drag-over');
+            if (!column) return;
             
             if (draggedElement && column) {
-                // Create new trend card in the column
-                const newCard = document.createElement('div');
-                newCard.className = 'trend-card';
-                newCard.draggable = true;
-                newCard.innerHTML = draggedElement.innerHTML;
-                
-                // Add drag event listeners to the new card
-                newCard.addEventListener('dragstart', handleDragStart);
-                newCard.addEventListener('dragend', handleDragEnd);
-                
-                column.appendChild(newCard);
-                
-                // Remove original from viral trends list
-                draggedElement.remove();
+                if (draggedType === 'trend') {
+                    // Create new trend card in column (copy, don't remove original)
+                    const newCard = document.createElement('div');
+                    newCard.className = 'trend-card';
+                    newCard.draggable = true;
+                    newCard.innerHTML = draggedElement.innerHTML;
+                    
+                    // Add drag event listeners to new card
+                    newCard.addEventListener('dragstart', handleDragStart);
+                    newCard.addEventListener('dragend', handleDragEnd);
+                    
+                    // Insert trend card at the top of column (as header)
+                    const firstPost = column.querySelector('.trend-post-card');
+                    if (firstPost) {
+                        column.insertBefore(newCard, firstPost);
+                    } else {
+                        column.appendChild(newCard);
+                    }
+                    
+                    // DON'T remove original from viral trends list
+                    // draggedElement.remove(); // REMOVED - keep original
+                    
+                    // Add posts to this trend column
+                    const trendTitle = draggedElement.querySelector('.trend-title')?.textContent;
+                    if (trendTitle) {
+                        addPostsToTrendColumn(trendTitle, column);
+                    }
+                } else if (draggedType === 'post') {
+                    // Handle post drop (move post card to column)
+                    // Insert post after all trend cards
+                    const trendCards = column.querySelectorAll('.trend-card');
+                    if (trendCards.length > 0) {
+                        const lastTrendCard = trendCards[trendCards.length - 1];
+                        column.insertBefore(draggedElement, lastTrendCard.nextSibling);
+                    } else {
+                        column.appendChild(draggedElement);
+                    }
+                } else if (draggedType === 'trend-card') {
+                    // Handle trend card drop from column (move between columns)
+                    // Insert at the top of column
+                    const firstPost = column.querySelector('.trend-post-card');
+                    if (firstPost) {
+                        column.insertBefore(draggedElement, firstPost);
+                    } else {
+                        column.appendChild(draggedElement);
+                    }
+                }
             }
             
             return false;
