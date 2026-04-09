@@ -171,6 +171,29 @@
             color: var(--muted);
         }
 
+        .trends-spinner {
+            position: absolute;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(29, 161, 242, 0.1);
+            border-top: 3px solid #1da1f2;
+            border-radius: 50%;
+            display: none;
+        }
+
+        .trends-spinner.active {
+            display: block;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: translateY(-50%) rotate(0deg); }
+            100% { transform: translateY(-50%) rotate(360deg); }
+        }
+
         .panel-body {
             flex: 1;
             overflow-y: auto;
@@ -340,6 +363,7 @@
         <div class="panel-header">
             <h1>Trends Dashboard</h1>
             <div class="sub">Drag and drop viral trends to organize your analysis</div>
+            <div class="trends-spinner" id="trends-spinner"></div>
         </div>
         <div class="trends-grid">
             <div class="trend-column" data-column="1"></div>
@@ -453,6 +477,12 @@
                 // Initialize UI with new data
                 initializeTrends();
                 
+                // Hide spinner after successful fetch
+                const spinner = document.getElementById('trends-spinner');
+                if (spinner) {
+                    spinner.classList.remove('active');
+                }
+                
                 return true;
             } catch (error) {
                 console.error('Error in fetchTrendsIteration:', error);
@@ -469,11 +499,23 @@
             isIterationRunning = true;
             console.log('Starting trends iteration loop');
             
+            // Show spinner
+            const spinner = document.getElementById('trends-spinner');
+            if (spinner) {
+                spinner.classList.add('active');
+            }
+            
             // First iteration immediately
             fetchTrendsIteration().then(hasMore => {
                 if (hasMore) {
                     // Continue iteration every 120 seconds
                     trendsIterationInterval = setInterval(() => {
+                        // Show spinner before fetch
+                        const spinner = document.getElementById('trends-spinner');
+                        if (spinner) {
+                            spinner.classList.add('active');
+                        }
+                        
                         fetchTrendsIteration().then(hasMore => {
                             if (!hasMore) {
                                 stopTrendsIteration();
@@ -493,6 +535,12 @@
             }
             isIterationRunning = false;
             console.log('Stopped trends iteration loop');
+            
+            // Hide spinner
+            const spinner = document.getElementById('trends-spinner');
+            if (spinner) {
+                spinner.classList.remove('active');
+            }
         }
 
         // Search functionality for trends
