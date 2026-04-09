@@ -12,4 +12,5 @@ urlpatterns = [
     path("remove-from-dashboard/", views.remove_from_dashboard, name="remove_from_dashboard"),
     path("forecast-views/<int:tweet_id>/", views.forecast_views, name="forecast_views"),
     path("sentiment/<int:tweet_id>/", views.sentiment, name="sentiment"),
+    path("trends-iteration/", views.get_trends_iteration, name="get_trends_iteration"),
 ]

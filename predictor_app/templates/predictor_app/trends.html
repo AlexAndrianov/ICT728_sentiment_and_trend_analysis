@@ -135,48 +135,6 @@
             font-weight: 500;
         }
 
-        .page-freeze-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(255, 255, 255, 0.95);
-            display: none;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            z-index: 10000;
-            backdrop-filter: blur(5px);
-        }
-
-        .page-freeze-overlay.active {
-            display: flex;
-        }
-
-        .main-spinner {
-            width: 20vh;
-            height: 20vh;
-            border: 8px solid rgba(29, 161, 242, 0.1);
-            border-top: 8px solid #1da1f2;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .freeze-message {
-            position: absolute;
-            bottom: 30%;
-            text-align: center;
-            color: var(--text);
-            font-size: 16px;
-            font-weight: 600;
-        }
-
         .viral-trends-footer {
             padding: 13px 20px;
             border-top: 1px solid var(--border);
@@ -378,12 +336,6 @@
 <body>
     <div class="background-pattern"></div>
     
-    <!-- Page freeze overlay -->
-    <div class="page-freeze-overlay" id="page-freeze-overlay">
-        <div class="main-spinner"></div>
-        <div class="freeze-message">Calculating forecasts and sentiment analysis...</div>
-    </div>
-
     <div class="trends-dashboard">
         <div class="panel-header">
             <h1>Trends Dashboard</h1>
@@ -445,10 +397,103 @@
             { title: "Online Education", engagement: "398K", growth: "+3%" }
         ];
 
-        // Dynamic hashtags from backend
-        const viralHashtags = {{ hashtag_stats_json|safe }};
+        // Dynamic hashtags from backend - will be populated by async iteration
+        const viralHashtags = [];
+
+        // Global arrays to store accumulated data from async iteration
+        let accumulatedTweets = [];
+        let accumulatedHashtagStats = [];
+        let trendsIterationInterval = null;
+        let isIterationRunning = false;
 
         let isHashtagMode = false;
+
+        // Async iteration functions
+        async function fetchTrendsIteration() {
+            try {
+                const response = await fetch('/trends-iteration/');
+                const data = await response.json();
+                
+                if (data.error) {
+                    console.error('Error fetching trends iteration:', data.error);
+                    return false;
+                }
+                
+                if (!data.has_more) {
+                    console.log('No more tweets to process, stopping iteration');
+                    return false;
+                }
+                
+                // Accumulate new data
+                accumulatedTweets = accumulatedTweets.concat(data.tweets_data);
+                
+                // Merge hashtag stats - aggregate by title
+                data.hashtag_stats.forEach(newStat => {
+                    const existingStat = accumulatedHashtagStats.find(s => s.title === newStat.title);
+                    if (existingStat) {
+                        existingStat.total_views += newStat.total_views;
+                        // Update engagement count
+                        const existingPostsCount = parseInt(existingStat.engagement) || 0;
+                        const newPostsCount = parseInt(newStat.engagement) || 0;
+                        existingStat.engagement = `${existingPostsCount + newPostsCount} posts`;
+                    } else {
+                        accumulatedHashtagStats.push(newStat);
+                    }
+                });
+                
+                // Sort hashtag stats by total views
+                accumulatedHashtagStats.sort((a, b) => b.total_views - a.total_views);
+                
+                // Update viralHashtags with accumulated data
+                viralHashtags.length = 0;
+                viralHashtags.push(...accumulatedHashtagStats);
+                
+                console.log(`Fetched ${data.tweets_data.length} tweets, total accumulated: ${accumulatedTweets.length}`);
+                
+                // Initialize UI with new data
+                initializeTrends();
+                
+                return true;
+            } catch (error) {
+                console.error('Error in fetchTrendsIteration:', error);
+                return false;
+            }
+        }
+
+        function startTrendsIteration() {
+            if (isIterationRunning) {
+                console.log('Iteration already running');
+                return;
+            }
+            
+            isIterationRunning = true;
+            console.log('Starting trends iteration loop');
+            
+            // First iteration immediately
+            fetchTrendsIteration().then(hasMore => {
+                if (hasMore) {
+                    // Continue iteration every 120 seconds
+                    trendsIterationInterval = setInterval(() => {
+                        fetchTrendsIteration().then(hasMore => {
+                            if (!hasMore) {
+                                stopTrendsIteration();
+                            }
+                        });
+                    }, 120000); // 120 seconds
+                } else {
+                    stopTrendsIteration();
+                }
+            });
+        }
+
+        function stopTrendsIteration() {
+            if (trendsIterationInterval) {
+                clearInterval(trendsIterationInterval);
+                trendsIterationInterval = null;
+            }
+            isIterationRunning = false;
+            console.log('Stopped trends iteration loop');
+        }
 
         // Search functionality for trends
         function filterTrends(searchTerm) {
@@ -554,8 +599,8 @@
 
         // Initialize search and trends when page loads
         document.addEventListener('DOMContentLoaded', function() {
-            // Show spinner immediately when page starts loading
-            showPageFreeze();
+            // Start async trends iteration loop immediately
+            startTrendsIteration();
             
             // Initialize trends search
             const searchInput = document.getElementById('trends-search-input');
@@ -564,97 +609,9 @@
                     filterTrends(e.target.value);
                 });
             }
-            
-            // Initialize trends
-            initializeTrends();
-            
-            // Start automatic calculation for all dashboard posts
-            startAutomaticCalculation();
         });
 
         // Page freeze management
-        function showPageFreeze() {
-            const overlay = document.getElementById('page-freeze-overlay');
-            if (overlay) {
-                overlay.classList.add('active');
-            }
-        }
-
-        function hidePageFreeze() {
-            const overlay = document.getElementById('page-freeze-overlay');
-            if (overlay) {
-                overlay.classList.remove('active');
-            }
-        }
-
-        // Automatic calculation for all posts
-        function startAutomaticCalculation() {
-            // Get saved posts from Django template context
-            calculateFromSavedPosts();
-        }
-
-        function calculateFromSavedPosts() {
-            // Get all tweets from Django template context as JSON
-            const tweetsData = {{ tweets_json|safe }};
-            
-            if (tweetsData && tweetsData.length > 0) {
-                // Spinner is already shown from DOMContentLoaded
-                const tweetIds = tweetsData.map(tweet => tweet.id);
-                calculateAllPosts(tweetIds);
-            } else {
-                hidePageFreeze();
-            }
-        }
-
-        function calculateAllPosts(tweetIds) {
-            let completedCalculations = 0;
-            const totalCalculations = tweetIds.length * 2; // forecast + sentiment for each post
-
-            if (tweetIds.length === 0) {
-                hidePageFreeze();
-                return;
-            }
-
-            tweetIds.forEach(tweetId => {
-                // Start forecast calculation
-                fetch(`/forecast-views/${tweetId}/`)
-                    .then(response => response.json())
-                    .then(data => {
-                        completedCalculations++;
-                        updateProgress(completedCalculations, totalCalculations);
-                    })
-                    .catch(error => {
-                        completedCalculations++;
-                        updateProgress(completedCalculations, totalCalculations);
-                    });
-
-                // Start sentiment calculation
-                fetch(`/sentiment/${tweetId}/`)
-                    .then(response => response.json())
-                    .then(data => {
-                        completedCalculations++;
-                        updateProgress(completedCalculations, totalCalculations);
-                    })
-                    .catch(error => {
-                        completedCalculations++;
-                        updateProgress(completedCalculations, totalCalculations);
-                    });
-            });
-        }
-
-        function updateProgress(completed, total) {
-            const message = document.querySelector('.freeze-message');
-            if (message) {
-                message.textContent = 'Calculating forecasts and sentiment analysis...';
-            }
-
-            if (completed >= total) {
-                // Add a minimum delay to show the spinner
-                setTimeout(() => {
-                    hidePageFreeze();
-                }, 3000); // Show spinner for at least 3 seconds
-            }
-        }
 
         let draggedElement = null;
         let draggedType = null; // 'trend' or 'post'
@@ -737,8 +694,8 @@
         }
 
         function addPostsToTrendColumn(trendTitle, column) {
-            // Get tweets for this hashtag
-            const tweets = {{ tweets_json|safe }};
+            // Get tweets for this hashtag from accumulated data
+            const tweets = accumulatedTweets;
             const hashtagTweets = tweets.filter(tweet => {
                 if (!tweet.hashtags) return false;
                 const tweetHashtags = tweet.hashtags.split(',').map(h => h.trim().toLowerCase());
