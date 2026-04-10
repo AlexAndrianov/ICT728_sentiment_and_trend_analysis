@@ -25,6 +25,11 @@ _SENTIMENT_FUTURES: dict[tuple[int, int], Future] = {}
 _LAST_PROCESSED_TWEET_ID = 0
 _TRENDS_ITERATION_LOCK = threading.Lock()
 
+# Global dictionary for caching sentiment and forecast results
+# Dictionary<TweetId, {sentiment: {score, label}, forecast_views: int}>
+gTwitsAnalysisData: dict[int, dict] = {}
+gTwitsAnalysisData_LOCK = threading.Lock()
+
 logger = logging.getLogger("predictor_app")
 
 
@@ -95,7 +100,57 @@ def get_trends_iteration(request):
                     'real_sentiment': tweet.real_sentiment,
                     'real_views': tweet.real_views,
                     'hashtags': tweet.hashtags,
+                    'sentiment': None,  # Will be filled after calculation
+                    'forecast_views': None,  # Will be filled after calculation
                 })
+            
+            # Calculate sentiment for all tweets in batch (parallel processing)
+            import concurrent.futures
+            from .trend_predictor import predict_views_for_tweet
+            
+            model_id = _get_selected_sentiment_model_id()
+            def get_tweet_sentiment(tweet):
+                try:
+                    return _calculate_sentiment_for_tweet(tweet.id, tweet.content or "", model_id)
+                except:
+                    return None
+            
+            # Calculate sentiment for all tweets in parallel
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                sentiment_futures = {executor.submit(get_tweet_sentiment, tweet): tweet for tweet in tweets}
+                sentiment_results = {}
+                for future in concurrent.futures.as_completed(sentiment_futures):
+                    try:
+                        result = future.result(timeout=10)
+                        tweet = sentiment_futures[future]
+                        sentiment_results[tweet.id] = result
+                    except Exception as e:
+                        logger.warning("Error calculating sentiment for tweet: %s", e)
+            
+            # Calculate sentiment percentage (weighted: positive=1, neutral=0.5, negative=0)
+            sentiment_sum = 0
+            total_count = len(tweets)
+            for tweet_id, sentiment in sentiment_results.items():
+                if sentiment:
+                    label = sentiment.get('label')
+                    if label == 'positive':
+                        sentiment_sum += 1
+                    elif label == 'neutral':
+                        sentiment_sum += 0.5
+                    elif label == 'negative':
+                        sentiment_sum += 0
+            
+            sentiment_percentage = 0
+            if total_count > 0:
+                sentiment_percentage = round((sentiment_sum / total_count) * 100, 1)
+            
+            # Fill sentiment data in tweets_data
+            for tweet_data in tweets_data:
+                if tweet_data['id'] in sentiment_results:
+                    sentiment_result = sentiment_results[tweet_data['id']]
+                    if sentiment_result:
+                        tweet_data['sentiment'] = sentiment_result.get('label')
+                        tweet_data['sentiment_score'] = sentiment_result.get('score')
             
             # Group tweets by hashtags and calculate forecast views
             from collections import defaultdict
@@ -115,8 +170,24 @@ def get_trends_iteration(request):
                 # Calculate forecast views in parallel
                 def get_tweet_views(tweet):
                     try:
+                        # Check cache first
+                        with gTwitsAnalysisData_LOCK:
+                            if tweet.id in gTwitsAnalysisData:
+                                cached_data = gTwitsAnalysisData[tweet.id]
+                                if 'forecast_views' in cached_data:
+                                    return cached_data['forecast_views']
+                        
+                        # Calculate if not in cache
                         predicted_views = predict_views_for_tweet(tweet)
-                        return int(predicted_views or 0)
+                        views = int(predicted_views or 0)
+                        
+                        # Cache the result
+                        with gTwitsAnalysisData_LOCK:
+                            if tweet.id not in gTwitsAnalysisData:
+                                gTwitsAnalysisData[tweet.id] = {}
+                            gTwitsAnalysisData[tweet.id]['forecast_views'] = views
+                        
+                        return views
                     except:
                         return 0
                 
@@ -139,16 +210,51 @@ def get_trends_iteration(request):
                     'title': hashtag,
                     'engagement': f"{len(tweet_list)} posts",
                     'total_views': total_views,
-                    'growth': f"+{len(tweet_list) * 5}%"  # Simplified growth calculation
+                    'growth': f"+{len(tweet_list) * 5}%",  # Simplified growth calculation
+                    'sentiment': None  # Will be filled after sentiment calculation
                 })
+            
+            # Calculate sentiment for each hashtag group
+            for hashtag_stat in hashtag_stats:
+                hashtag = hashtag_stat['title']
+                tweet_list = hashtag_groups.get(hashtag, [])
+                
+                sentiment_sum = 0
+                tweet_count = len(tweet_list)
+                for tweet in tweet_list:
+                    with gTwitsAnalysisData_LOCK:
+                        if tweet.id in gTwitsAnalysisData:
+                            cached_data = gTwitsAnalysisData[tweet.id]
+                            if 'sentiment' in cached_data:
+                                label = cached_data['sentiment'].get('label')
+                                if label == 'positive':
+                                    sentiment_sum += 1
+                                elif label == 'neutral':
+                                    sentiment_sum += 0.5
+                                elif label == 'negative':
+                                    sentiment_sum += 0
+                
+                sentiment_percentage = 0
+                if tweet_count > 0:
+                    sentiment_percentage = round((sentiment_sum / tweet_count) * 100, 1)
+                hashtag_stat['sentiment'] = sentiment_percentage
             
             # Sort by total views (descending)
             hashtag_stats.sort(key=lambda x: x['total_views'], reverse=True)
             
+            # Fill forecast_views data in tweets_data from cache (after calculations)
+            for tweet_data in tweets_data:
+                with gTwitsAnalysisData_LOCK:
+                    if tweet_data['id'] in gTwitsAnalysisData:
+                        cached_data = gTwitsAnalysisData[tweet_data['id']]
+                        if 'forecast_views' in cached_data:
+                            tweet_data['forecast_views'] = cached_data['forecast_views']
+            
             return JsonResponse({
                 'tweets_data': tweets_data,
                 'hashtag_stats': hashtag_stats,
-                'has_more': True
+                'has_more': True,
+                'sentiment': sentiment_percentage
             })
             
     except Exception as e:
@@ -221,6 +327,14 @@ def forecast_views(request, tweet_id: int):
     try:
         tweet_id_int = int(tweet_id)
 
+        # Check cache first
+        with gTwitsAnalysisData_LOCK:
+            if tweet_id_int in gTwitsAnalysisData:
+                cached_data = gTwitsAnalysisData[tweet_id_int]
+                if 'forecast_views' in cached_data:
+                    logger.info("forecast_view: cache hit tweet_id=%s", tweet_id_int)
+                    return JsonResponse({'status': 'ready', 'views': cached_data['forecast_views']})
+
         with _FORECAST_LOCK:
             fut = _FORECAST_FUTURES.get(tweet_id_int)
             if fut is None or fut.cancelled():
@@ -244,6 +358,13 @@ def forecast_views(request, tweet_id: int):
             return JsonResponse({'status': 'error', 'error': str(err)})
 
         views = int(fut.result() or 0)
+        
+        # Cache the result
+        with gTwitsAnalysisData_LOCK:
+            if tweet_id_int not in gTwitsAnalysisData:
+                gTwitsAnalysisData[tweet_id_int] = {}
+            gTwitsAnalysisData[tweet_id_int]['forecast_views'] = views
+        
         return JsonResponse({'status': 'ready', 'views': views})
     except Exception as e:
         return JsonResponse({'status': 'error', 'error': str(e)})
@@ -261,10 +382,57 @@ def _get_selected_sentiment_model_id() -> int:
     return 1
 
 
+def _calculate_sentiment_for_tweet(tweet_id: int, tweet_content: str, model_id: int) -> dict:
+    """Shared function to calculate sentiment for a tweet and cache the result."""
+    # Check cache first
+    with gTwitsAnalysisData_LOCK:
+        if tweet_id in gTwitsAnalysisData:
+            cached_data = gTwitsAnalysisData[tweet_id]
+            if 'sentiment' in cached_data:
+                return cached_data['sentiment']
+    
+    # Calculate if not in cache
+    try:
+        mod = importlib.import_module("predictor_app.nltk_vader_sentiment")
+    except Exception as ie:
+        logger.exception("_calculate_sentiment_for_tweet: failed to import predictor_app.nltk_vader_sentiment")
+        return None
+    
+    predict_fn = getattr(mod, "predict_sentiment", None)
+    if predict_fn is None:
+        attrs = [a for a in dir(mod) if not a.startswith("_")]
+        logger.error(
+            "_calculate_sentiment_for_tweet: nltk_vader_sentiment module has no predict_sentiment. attrs=%s",
+            attrs[:80],
+        )
+        raise ImportError(
+            f"predict_sentiment not found in predictor_app.nltk_vader_sentiment; available={attrs[:20]}"
+        )
+    
+    res = predict_fn(tweet_content or "", model_id)
+    sentiment_result = {"score": int(res.score), "label": str(res.label)}
+    
+    # Cache the result
+    with gTwitsAnalysisData_LOCK:
+        if tweet_id not in gTwitsAnalysisData:
+            gTwitsAnalysisData[tweet_id] = {}
+        gTwitsAnalysisData[tweet_id]['sentiment'] = sentiment_result
+    
+    return sentiment_result
+
+
 @require_http_methods(["GET"])
 def sentiment(request, tweet_id: int):
     try:
         tweet_id_int = int(tweet_id)
+
+        # Check cache first
+        with gTwitsAnalysisData_LOCK:
+            if tweet_id_int in gTwitsAnalysisData:
+                cached_data = gTwitsAnalysisData[tweet_id_int]
+                if 'sentiment' in cached_data:
+                    logger.info("sentiment_view: cache hit tweet_id=%s", tweet_id_int)
+                    return JsonResponse({'status': 'ready', **cached_data['sentiment']})
 
         model_id = _get_selected_sentiment_model_id()
         cache_key = (tweet_id_int, model_id)
@@ -276,34 +444,20 @@ def sentiment(request, tweet_id: int):
                     t0 = time.time()
                     logger.warning("sentiment_view: job_start tweet_id=%s model_id=%s", tid, mid)
                     tweet = TweetPost.objects.get(id=tid)
-                    try:
-                        mod = importlib.import_module("predictor_app.nltk_vader_sentiment")
-                    except Exception as ie:
-                        logger.exception("sentiment_view: failed to import predictor_app.nltk_vader_sentiment")
-                        raise
-
-                    predict_fn = getattr(mod, "predict_sentiment", None)
-                    if predict_fn is None:
-                        attrs = [a for a in dir(mod) if not a.startswith("_")]
-                        logger.error(
-                            "sentiment_view: nltk_vader_sentiment module has no predict_sentiment. attrs=%s",
-                            attrs[:80],
-                        )
-                        raise ImportError(
-                            f"predict_sentiment not found in predictor_app.nltk_vader_sentiment; available={attrs[:20]}"
-                        )
-
-                    res = predict_fn(tweet.content or "", mid)
+                    
+                    # Use shared sentiment calculation function
+                    result = _calculate_sentiment_for_tweet(tweet.id, tweet.content or "", mid)
+                    
                     dt_ms = int((time.time() - t0) * 1000)
                     logger.warning(
                         "sentiment_view: job_done tweet_id=%s model_id=%s score=%s label=%s took_ms=%s",
                         tid,
                         mid,
-                        int(res.score),
-                        str(res.label),
+                        result.get("score") if result else None,
+                        result.get("label") if result else None,
                         dt_ms,
                     )
-                    return {"score": int(res.score), "label": str(res.label)}
+                    return result
 
                 fut = _SENTIMENT_EXECUTOR.submit(_job, tweet_id_int, model_id)
                 _SENTIMENT_FUTURES[cache_key] = fut
@@ -323,6 +477,7 @@ def sentiment(request, tweet_id: int):
         # Drop completed future to avoid serving stale results after code/model changes.
         with _SENTIMENT_LOCK:
             _SENTIMENT_FUTURES.pop(cache_key, None)
+        
         logger.warning(
             "sentiment_view: ready tweet_id=%s model_id=%s score=%s label=%s",
             tweet_id_int,

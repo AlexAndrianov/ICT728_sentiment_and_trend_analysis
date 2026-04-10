@@ -233,13 +233,26 @@
             border: 1px solid var(--border);
             border-radius: 8px;
             padding: 12px;
-            margin-bottom: 8px;
-            border-radius: 6px;
-            padding: 6px;
-            margin-bottom: 4px;
+            margin-bottom: 12px;
+            margin-top: 12px;
             cursor: move;
             transition: all 0.3s ease;
             font-size: 12px;
+        }
+
+        .trend-post-avatar-placeholder {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .trend-post-avatar-placeholder svg {
+            width: 100%;
+            height: 100%;
         }
 
         .trend-card:hover {
@@ -256,8 +269,8 @@
             background: var(--panel);
             border: 1px solid var(--border);
             border-radius: 6px;
-            padding: 6px;
-            margin-bottom: 4px;
+            padding: 12px;
+            margin-bottom: 8px;
             cursor: move;
             transition: all 0.3s ease;
             font-size: 12px;
@@ -276,7 +289,7 @@
         .trend-title {
             font-weight: 600;
             color: var(--text);
-            margin-bottom: 4px;
+            margin-bottom: 6px;
             font-size: 13px;
         }
 
@@ -285,10 +298,46 @@
             justify-content: space-between;
             color: var(--muted);
             font-size: 11px;
+            margin-bottom: 8px;
         }
 
         .trend-engagement {
             color: var(--good);
+            font-weight: 500;
+        }
+
+        .trend-sentiment {
+            margin-top: 8px;
+        }
+
+        .trend-sentiment-label {
+            font-size: 10px;
+            color: var(--muted);
+            margin-bottom: 4px;
+        }
+
+        .trend-sentiment-slider {
+            display: flex;
+            align-items: center;
+            margin-bottom: 4px;
+            height: 6px;
+            background: #ef4444;
+            border-radius: 3px;
+            position: relative;
+        }
+
+        .trend-sentiment-bar {
+            height: 100%;
+            background: #22c55e;
+            border-radius: 3px;
+            position: absolute;
+            left: 0;
+            top: 0;
+        }
+
+        .trend-sentiment-value {
+            font-size: 11px;
+            color: var(--text);
             font-weight: 500;
         }
 
@@ -635,6 +684,15 @@
                         <span>${engagementDisplay}</span>
                         <span class="trend-engagement">${item.growth}</span>
                     </div>
+                    ${item.sentiment !== undefined && item.sentiment !== null ? `
+                    <div class="trend-sentiment">
+                        <div class="trend-sentiment-label">Sentiment</div>
+                        <div class="trend-sentiment-slider">
+                            <div class="trend-sentiment-bar" style="width: ${item.sentiment}%"></div>
+                        </div>
+                        <div class="trend-sentiment-value">${item.sentiment}%</div>
+                    </div>
+                    ` : ''}
                 `;
                 
                 // Add drag event listeners
@@ -670,10 +728,46 @@
             card.draggable = true;
             card.dataset.tweetId = tweet.id;
             
-            const avatarLetter = (tweet.screen_name || '').replace('@', '').trim()[0] || 'U';
             const avatarContent = tweet.profile_image_url ? 
-                `<img src="${tweet.profile_image_url}" alt="avatar">` : 
-                avatarLetter.toUpperCase();
+                `<img src="${tweet.profile_image_url}" alt="avatar" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                <div class="trend-post-avatar-placeholder" style="display: none;">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="12" cy="12" r="12" fill="#9CA3AF"/>
+                        <circle cx="12" cy="8" r="4" fill="#E5E7EB"/>
+                        <path d="M5 20C5 16 8 13 12 13C16 13 19 16 19 20" fill="#E5E7EB"/>
+                    </svg>
+                </div>` : 
+                `<div class="trend-post-avatar-placeholder">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="12" cy="12" r="12" fill="#9CA3AF"/>
+                        <circle cx="12" cy="8" r="4" fill="#E5E7EB"/>
+                        <path d="M5 20C5 16 8 13 12 13C16 13 19 16 19 20" fill="#E5E7EB"/>
+                    </svg>
+                </div>`;
+            
+            // Use sentiment from tweet data if available, otherwise show loading
+            const sentiment = tweet.sentiment || null;
+            const sentimentHtml = sentiment ? 
+                `<div class="trend-post-sentiment ${sentiment}">
+                    <span class="face">${sentiment === 'positive' ? '😊' : sentiment === 'negative' ? '😞' : '😐'}</span>
+                    <span class="label">${sentiment.charAt(0).toUpperCase() + sentiment.slice(1)}</span>
+                </div>` :
+                `<div class="trend-post-sentiment" data-sentiment-state="loading">
+                    <span class="face">⏳</span>
+                    <span class="label">Loading...</span>
+                </div>`;
+            
+            // Use forecast_views from tweet data if available, otherwise show loading
+            const forecastViews = tweet.forecast_views || null;
+            const forecastHtml = forecastViews !== null ?
+                `<div class="trend-post-forecast">
+                    <div class="label">Forecast views</div>
+                    <div class="value">${forecastViews.toLocaleString()}</div>
+                </div>` :
+                `<div class="trend-post-forecast" data-forecast-state="loading">
+                    <div class="label">Forecast views</div>
+                    <div class="value"><span class="spinner">⏳</span></div>
+                </div>`;
             
             card.innerHTML = `
                 <div class="trend-post-header">
@@ -685,14 +779,8 @@
                 </div>
                 <div class="trend-post-content">${tweet.content}</div>
                 <div class="trend-post-metrics">
-                    <div class="trend-post-sentiment" data-sentiment-state="loading">
-                        <span class="face">⏳</span>
-                        <span class="label">Loading...</span>
-                    </div>
-                    <div class="trend-post-forecast" data-forecast-state="loading">
-                        <div class="label">Forecast views</div>
-                        <div class="value"><span class="spinner">⏳</span></div>
-                    </div>
+                    ${sentimentHtml}
+                    ${forecastHtml}
                 </div>
             `;
             
@@ -700,8 +788,10 @@
             card.addEventListener('dragstart', handlePostDragStart);
             card.addEventListener('dragend', handlePostDragEnd);
             
-            // Load metrics for this card
-            loadPostMetrics(card, tweet.id);
+            // Load metrics for this card only if not available
+            if (!sentiment || forecastViews === null) {
+                loadPostMetrics(card, tweet.id);
+            }
             
             return card;
         }
