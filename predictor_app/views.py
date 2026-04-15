@@ -77,13 +77,13 @@ def trends(request):
 
 @require_http_methods(["GET"])
 def get_trends_iteration(request):
-    """Get next batch of tweets for trends calculation (200 posts per batch)"""
+    """Get next batch of tweets for trends calculation (50 posts per batch)"""
     global _LAST_PROCESSED_TWEET_ID, _TRENDS_ITERATION_INDEX, g_hashtag_stats
     
     try:
         with _TRENDS_ITERATION_LOCK:
-            # Get next batch of 200 tweets (or less if fewer remain)
-            tweets = list(TweetPost.objects.filter(id__gt=_LAST_PROCESSED_TWEET_ID).order_by('id')[:200])
+            # Get next batch of 50 tweets (or less if fewer remain)
+            tweets = list(TweetPost.objects.filter(id__gt=_LAST_PROCESSED_TWEET_ID).order_by('id')[:50])
             
             if not tweets:
                 # No more tweets to process

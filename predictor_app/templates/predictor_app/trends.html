@@ -521,8 +521,9 @@
                 }
                 
                 if (!data.has_more) {
-                    console.log('No more tweets to process, stopping iteration');
-                    return false;
+                    console.log('No new tweets in this iteration, waiting for next poll');
+                    // Keep polling; new tweets may arrive later.
+                    return true;
                 }
                 
                 // Accumulate new data
@@ -568,7 +569,7 @@
             // First iteration immediately
             fetchTrendsIteration().then(hasMore => {
                 if (hasMore) {
-                    // Continue iteration every 120 seconds
+                    // Continue iteration every 20 seconds
                     trendsIterationInterval = setInterval(() => {
                         // Show spinner before fetch
                         const spinner = document.getElementById('trends-spinner');
@@ -581,7 +582,7 @@
                                 stopTrendsIteration();
                             }
                         });
-                    }, 120000); // 120 seconds
+                    }, 20000); // 20 seconds
                 } else {
                     stopTrendsIteration();
                 }
