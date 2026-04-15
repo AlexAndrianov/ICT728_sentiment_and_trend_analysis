@@ -24,11 +24,15 @@ _SENTIMENT_FUTURES: dict[tuple[int, int], Future] = {}
 # Global variable to track last processed tweet ID for batch processing
 _LAST_PROCESSED_TWEET_ID = 0
 _TRENDS_ITERATION_LOCK = threading.Lock()
+_TRENDS_ITERATION_INDEX = 0
 
 # Global dictionary for caching sentiment and forecast results
 # Dictionary<TweetId, {sentiment: {score, label}, forecast_views: int}>
 gTwitsAnalysisData: dict[int, dict] = {}
 gTwitsAnalysisData_LOCK = threading.Lock()
+
+# Dictionary<iteration_number, Dictionary<hashtag_title, hashtag_stats>>
+g_hashtag_stats: dict[int, dict[str, dict]] = {}
 
 logger = logging.getLogger("predictor_app")
 
@@ -56,9 +60,11 @@ def landing(request):
 def trends(request):
     """Trends dashboard page"""
     # Reset the iteration counter when page is loaded fresh
-    global _LAST_PROCESSED_TWEET_ID
+    global _LAST_PROCESSED_TWEET_ID, _TRENDS_ITERATION_INDEX, g_hashtag_stats
     with _TRENDS_ITERATION_LOCK:
         _LAST_PROCESSED_TWEET_ID = 0
+        _TRENDS_ITERATION_INDEX = 0
+        g_hashtag_stats = {}
     
     # Return empty context - data will be loaded via async iteration
     context = {
@@ -72,7 +78,7 @@ def trends(request):
 @require_http_methods(["GET"])
 def get_trends_iteration(request):
     """Get next batch of tweets for trends calculation (200 posts per batch)"""
-    global _LAST_PROCESSED_TWEET_ID
+    global _LAST_PROCESSED_TWEET_ID, _TRENDS_ITERATION_INDEX, g_hashtag_stats
     
     try:
         with _TRENDS_ITERATION_LOCK:
@@ -86,6 +92,9 @@ def get_trends_iteration(request):
             # Update last processed ID
             last_tweet = tweets[-1]
             _LAST_PROCESSED_TWEET_ID = last_tweet.id
+            _TRENDS_ITERATION_INDEX += 1
+            current_iteration = _TRENDS_ITERATION_INDEX
+            previous_iteration = current_iteration - 1
             
             # Convert to JSON-safe format
             tweets_data = []
@@ -209,9 +218,13 @@ def get_trends_iteration(request):
                 hashtag_stats.append({
                     'title': hashtag,
                     'engagement': f"{len(tweet_list)} posts",
+                    'engagement_count': len(tweet_list),
                     'total_views': total_views,
                     'growth': f"+{len(tweet_list) * 5}%",  # Simplified growth calculation
-                    'sentiment': None  # Will be filled after sentiment calculation
+                    'sentiment': None,  # Will be filled after sentiment calculation
+                    'total_views_diff': 0,
+                    'sentiment_diff': 0,
+                    'engagement_diff': 0,
                 })
             
             # Calculate sentiment for each hashtag group
@@ -238,9 +251,34 @@ def get_trends_iteration(request):
                 if tweet_count > 0:
                     sentiment_percentage = round((sentiment_sum / tweet_count) * 100, 1)
                 hashtag_stat['sentiment'] = sentiment_percentage
+
+            prev_iteration_stats = g_hashtag_stats.get(previous_iteration, {})
+            for hashtag_stat in hashtag_stats:
+                prev_hashtag_stat = prev_iteration_stats.get(hashtag_stat['title'])
+                if prev_hashtag_stat:
+                    previous_total_views = int(prev_hashtag_stat.get('total_views', 0) or 0)
+                    current_total_views = int(hashtag_stat['total_views'] or 0)
+                    if previous_total_views > 0:
+                        hashtag_stat['total_views_diff'] = round(
+                            ((current_total_views - previous_total_views) / previous_total_views) * 100,
+                            1
+                        )
+                    else:
+                        hashtag_stat['total_views_diff'] = 0
+                    hashtag_stat['sentiment_diff'] = round(float(hashtag_stat['sentiment'] or 0) - float(prev_hashtag_stat.get('sentiment', 0) or 0), 1)
+                    hashtag_stat['engagement_diff'] = hashtag_stat['engagement_count'] - int(prev_hashtag_stat.get('engagement_count', 0) or 0)
+                else:
+                    hashtag_stat['total_views_diff'] = 0
+                    hashtag_stat['sentiment_diff'] = 0
+                    hashtag_stat['engagement_diff'] = 0
             
             # Sort by total views (descending)
             hashtag_stats.sort(key=lambda x: x['total_views'], reverse=True)
+
+            g_hashtag_stats[current_iteration] = {
+                hashtag_stat['title']: hashtag_stat.copy()
+                for hashtag_stat in hashtag_stats
+            }
             
             # Fill forecast_views data in tweets_data from cache (after calculations)
             for tweet_data in tweets_data:

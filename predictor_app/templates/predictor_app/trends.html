@@ -274,6 +274,7 @@
             cursor: move;
             transition: all 0.3s ease;
             font-size: 12px;
+            position: relative;
         }
 
         .viral-trend-item:hover {
@@ -296,14 +297,10 @@
         .trend-stats {
             display: flex;
             justify-content: space-between;
+            align-items: center;
             color: var(--muted);
             font-size: 11px;
             margin-bottom: 8px;
-        }
-
-        .trend-engagement {
-            color: var(--good);
-            font-weight: 500;
         }
 
         .trend-sentiment {
@@ -339,6 +336,38 @@
             font-size: 11px;
             color: var(--text);
             font-weight: 500;
+        }
+
+        .trend-diff-column {
+            margin-left: auto;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            justify-content: center;
+            gap: 4px;
+            font-size: 10px;
+            line-height: 1.1;
+            font-weight: 700;
+            text-align: right;
+        }
+
+        .trend-diff-item {
+            display: inline-flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 6px;
+        }
+
+        .trend-diff-positive {
+            color: var(--good);
+        }
+
+        .trend-diff-negative {
+            color: var(--bad);
+        }
+
+        .trend-diff-neutral {
+            color: var(--muted);
         }
 
         .toggle-label {
@@ -475,7 +504,6 @@
 
         // Global arrays to store accumulated data from async iteration
         let accumulatedTweets = [];
-        let accumulatedHashtagStats = [];
         let trendsIterationInterval = null;
         let isIterationRunning = false;
 
@@ -499,27 +527,10 @@
                 
                 // Accumulate new data
                 accumulatedTweets = accumulatedTweets.concat(data.tweets_data);
-                
-                // Merge hashtag stats - aggregate by title
-                data.hashtag_stats.forEach(newStat => {
-                    const existingStat = accumulatedHashtagStats.find(s => s.title === newStat.title);
-                    if (existingStat) {
-                        existingStat.total_views += newStat.total_views;
-                        // Update engagement count
-                        const existingPostsCount = parseInt(existingStat.engagement) || 0;
-                        const newPostsCount = parseInt(newStat.engagement) || 0;
-                        existingStat.engagement = `${existingPostsCount + newPostsCount} posts`;
-                    } else {
-                        accumulatedHashtagStats.push(newStat);
-                    }
-                });
-                
-                // Sort hashtag stats by total views
-                accumulatedHashtagStats.sort((a, b) => b.total_views - a.total_views);
-                
-                // Update viralHashtags with accumulated data
+
+                // Use backend hashtag stats as-is (with *_diff calculated on backend)
                 viralHashtags.length = 0;
-                viralHashtags.push(...accumulatedHashtagStats);
+                viralHashtags.push(...(data.hashtag_stats || []));
                 
                 console.log(`Fetched ${data.tweets_data.length} tweets, total accumulated: ${accumulatedTweets.length}`);
                 
@@ -677,12 +688,37 @@
                 if (isHashtagMode && item.total_views) {
                     engagementDisplay = `${(item.total_views / 1000000).toFixed(1)}M views`;
                 }
+
+                function getDiffMeta(value) {
+                    const numeric = Number(value || 0);
+                    if (numeric > 0) {
+                        return { arrow: '↑', className: 'trend-diff-positive', value: numeric };
+                    }
+                    if (numeric < 0) {
+                        return { arrow: '↓', className: 'trend-diff-negative', value: numeric };
+                    }
+                    return { arrow: '=', className: 'trend-diff-neutral', value: numeric };
+                }
+
+                const totalViewsDiffMeta = getDiffMeta(item.total_views_diff);
+                const sentimentDiffMeta = getDiffMeta(item.sentiment_diff);
+                const engagementDiffMeta = getDiffMeta(item.engagement_diff);
+                const showDiffs = isHashtagMode;
+                const totalViewsDiffDisplay = `Forecast views: ${totalViewsDiffMeta.value > 0 ? '+' : ''}${totalViewsDiffMeta.value.toFixed(1)} %`;
+                const sentimentDiffDisplay = `Sentiment: ${sentimentDiffMeta.value > 0 ? '+' : ''}${sentimentDiffMeta.value.toFixed(1)} %`;
+                const engagementDiffDisplay = `Engagement: ${engagementDiffMeta.value > 0 ? '+' : ''}${engagementDiffMeta.value}`;
                 
                 itemCard.innerHTML = `
                     <div class="trend-title">${item.title}</div>
                     <div class="trend-stats">
                         <span>${engagementDisplay}</span>
-                        <span class="trend-engagement">${item.growth}</span>
+                        ${showDiffs ? `
+                        <div class="trend-diff-column">
+                            <span class="trend-diff-item ${totalViewsDiffMeta.className}">${totalViewsDiffMeta.arrow} ${totalViewsDiffDisplay}</span>
+                            <span class="trend-diff-item ${sentimentDiffMeta.className}">${sentimentDiffMeta.arrow} ${sentimentDiffDisplay}</span>
+                            <span class="trend-diff-item ${engagementDiffMeta.className}">${engagementDiffMeta.arrow} ${engagementDiffDisplay}</span>
+                        </div>
+                        ` : ''}
                     </div>
                     ${item.sentiment !== undefined && item.sentiment !== null ? `
                     <div class="trend-sentiment">
