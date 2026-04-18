@@ -501,9 +501,10 @@
 
         // Dynamic hashtags from backend - will be populated by async iteration
         const viralHashtags = [];
+        let previousHashtagStatsByTitle = {};
 
         // Global arrays to store accumulated data from async iteration
-        let accumulatedTweets = [];
+        let latestIterationTweets = [];
         let trendsIterationInterval = null;
         let isIterationRunning = false;
 
@@ -526,17 +527,22 @@
                     return true;
                 }
                 
-                // Accumulate new data
-                accumulatedTweets = accumulatedTweets.concat(data.tweets_data);
+                latestIterationTweets = data.tweets_data || [];
 
                 // Use backend hashtag stats as-is (with *_diff calculated on backend)
+                previousHashtagStatsByTitle = {};
+                viralHashtags.forEach(item => {
+                    const key = (item.title || '').trim().toLowerCase();
+                    if (key) {
+                        previousHashtagStatsByTitle[key] = item;
+                    }
+                });
                 viralHashtags.length = 0;
                 viralHashtags.push(...(data.hashtag_stats || []));
                 
-                console.log(`Fetched ${data.tweets_data.length} tweets, total accumulated: ${accumulatedTweets.length}`);
-                
                 // Initialize UI with new data
                 initializeTrends();
+                synchronizeDroppedTrendCards();
                 
                 // Hide spinner after successful fetch
                 const spinner = document.getElementById('trends-spinner');
@@ -672,65 +678,114 @@
             initializeTrends();
         }
 
+        function getDiffMeta(value) {
+            const numeric = Number(value || 0);
+            if (numeric > 0) {
+                return { arrow: '↑', className: 'trend-diff-positive', value: numeric };
+            }
+            if (numeric < 0) {
+                return { arrow: '↓', className: 'trend-diff-negative', value: numeric };
+            }
+            return { arrow: '=', className: 'trend-diff-neutral', value: numeric };
+        }
+
+        function renderTrendCardHtml(item, showDiffs) {
+            let engagementDisplay = item.engagement;
+            if (isHashtagMode && item.total_views) {
+                engagementDisplay = `${(item.total_views / 1000000).toFixed(1)}M views`;
+            }
+
+            const totalViewsDiffMeta = getDiffMeta(item.total_views_diff);
+            const sentimentDiffMeta = getDiffMeta(item.sentiment_diff);
+            const engagementDiffMeta = getDiffMeta(item.engagement_diff);
+            const totalViewsDiffDisplay = `Forecast views: ${totalViewsDiffMeta.value > 0 ? '+' : ''}${totalViewsDiffMeta.value.toFixed(1)} %`;
+            const sentimentDiffDisplay = `Sentiment: ${sentimentDiffMeta.value > 0 ? '+' : ''}${sentimentDiffMeta.value.toFixed(1)} %`;
+            const engagementDiffDisplay = `Engagement: ${engagementDiffMeta.value > 0 ? '+' : ''}${engagementDiffMeta.value}`;
+
+            return `
+                <div class="trend-title">${item.title}</div>
+                <div class="trend-stats">
+                    <span>${engagementDisplay}</span>
+                    ${showDiffs ? `
+                    <div class="trend-diff-column">
+                        <span class="trend-diff-item ${totalViewsDiffMeta.className}">${totalViewsDiffMeta.arrow} ${totalViewsDiffDisplay}</span>
+                        <span class="trend-diff-item ${sentimentDiffMeta.className}">${sentimentDiffMeta.arrow} ${sentimentDiffDisplay}</span>
+                        <span class="trend-diff-item ${engagementDiffMeta.className}">${engagementDiffMeta.arrow} ${engagementDiffDisplay}</span>
+                    </div>
+                    ` : ''}
+                </div>
+                ${item.sentiment !== undefined && item.sentiment !== null ? `
+                <div class="trend-sentiment">
+                    <div class="trend-sentiment-label">Sentiment</div>
+                    <div class="trend-sentiment-slider">
+                        <div class="trend-sentiment-bar" style="width: ${item.sentiment}%"></div>
+                    </div>
+                    <div class="trend-sentiment-value">${item.sentiment}%</div>
+                </div>
+                ` : ''}
+            `;
+        }
+
+        function findCurrentTrendDataByTitle(title) {
+            const normalizedTitle = (title || '').trim().toLowerCase();
+            if (!normalizedTitle) {
+                return null;
+            }
+
+            const currentData = isHashtagMode ? viralHashtags : viralTrends;
+            return currentData.find(item => (item.title || '').trim().toLowerCase() === normalizedTitle) || null;
+        }
+
+        function synchronizeDroppedTrendCards() {
+            document.querySelectorAll('.trend-column').forEach(column => {
+                const trendCard = column.querySelector('.trend-card');
+                if (!trendCard) {
+                    return;
+                }
+
+                const trendTitle = trendCard.querySelector('.trend-title')?.textContent;
+                const trendData = findCurrentTrendDataByTitle(trendTitle);
+                if (trendData) {
+                    trendCard.innerHTML = renderTrendCardHtml(trendData, isHashtagMode);
+                } else {
+                    trendCard.innerHTML = renderTrendCardHtml(buildMissingTrendData(trendTitle), true);
+                }
+
+                // Rebuild post cards from fresh iteration data to avoid stale metrics and duplicates.
+                refreshPostsForTrendColumn(trendTitle, column);
+            });
+        }
+
+        function buildMissingTrendData(title) {
+            const normalizedTitle = (title || '').trim().toLowerCase();
+            const previousTrendData = previousHashtagStatsByTitle[normalizedTitle] || null;
+            const lostPosts = Number(previousTrendData?.engagement_count || 0);
+            return {
+                title: title,
+                engagement: `-${lostPosts} posts`,
+                engagement_count: 0,
+                total_views: 0,
+                sentiment: 50,
+                total_views_diff: -100,
+                sentiment_diff: 0,
+                engagement_diff: -lostPosts,
+            };
+        }
+
         function initializeTrends() {
             const trendsList = document.getElementById('viral-trends-list');
             trendsList.innerHTML = '';
             
-            const currentData = isHashtagMode ? viralHashtags : viralTrends;
+            const currentData = isHashtagMode
+                ? viralHashtags.filter(item => item.engagement_count > 0)
+                : viralTrends;
             
             currentData.forEach((item, index) => {
                 const itemCard = document.createElement('div');
-                itemCard.className = isHashtagMode ? 'viral-trend-item' : 'viral-trend-item';
+                itemCard.className = 'viral-trend-item';
                 itemCard.draggable = true;
                 itemCard.dataset.itemId = index + 1;
-                
-                // Format views for hashtags
-                let engagementDisplay = item.engagement;
-                if (isHashtagMode && item.total_views) {
-                    engagementDisplay = `${(item.total_views / 1000000).toFixed(1)}M views`;
-                }
-
-                function getDiffMeta(value) {
-                    const numeric = Number(value || 0);
-                    if (numeric > 0) {
-                        return { arrow: '↑', className: 'trend-diff-positive', value: numeric };
-                    }
-                    if (numeric < 0) {
-                        return { arrow: '↓', className: 'trend-diff-negative', value: numeric };
-                    }
-                    return { arrow: '=', className: 'trend-diff-neutral', value: numeric };
-                }
-
-                const totalViewsDiffMeta = getDiffMeta(item.total_views_diff);
-                const sentimentDiffMeta = getDiffMeta(item.sentiment_diff);
-                const engagementDiffMeta = getDiffMeta(item.engagement_diff);
-                const showDiffs = isHashtagMode;
-                const totalViewsDiffDisplay = `Forecast views: ${totalViewsDiffMeta.value > 0 ? '+' : ''}${totalViewsDiffMeta.value.toFixed(1)} %`;
-                const sentimentDiffDisplay = `Sentiment: ${sentimentDiffMeta.value > 0 ? '+' : ''}${sentimentDiffMeta.value.toFixed(1)} %`;
-                const engagementDiffDisplay = `Engagement: ${engagementDiffMeta.value > 0 ? '+' : ''}${engagementDiffMeta.value}`;
-                
-                itemCard.innerHTML = `
-                    <div class="trend-title">${item.title}</div>
-                    <div class="trend-stats">
-                        <span>${engagementDisplay}</span>
-                        ${showDiffs ? `
-                        <div class="trend-diff-column">
-                            <span class="trend-diff-item ${totalViewsDiffMeta.className}">${totalViewsDiffMeta.arrow} ${totalViewsDiffDisplay}</span>
-                            <span class="trend-diff-item ${sentimentDiffMeta.className}">${sentimentDiffMeta.arrow} ${sentimentDiffDisplay}</span>
-                            <span class="trend-diff-item ${engagementDiffMeta.className}">${engagementDiffMeta.arrow} ${engagementDiffDisplay}</span>
-                        </div>
-                        ` : ''}
-                    </div>
-                    ${item.sentiment !== undefined && item.sentiment !== null ? `
-                    <div class="trend-sentiment">
-                        <div class="trend-sentiment-label">Sentiment</div>
-                        <div class="trend-sentiment-slider">
-                            <div class="trend-sentiment-bar" style="width: ${item.sentiment}%"></div>
-                        </div>
-                        <div class="trend-sentiment-value">${item.sentiment}%</div>
-                    </div>
-                    ` : ''}
-                `;
+                itemCard.innerHTML = renderTrendCardHtml(item, isHashtagMode);
                 
                 // Add drag event listeners
                 itemCard.addEventListener('dragstart', handleDragStart);
@@ -869,8 +924,20 @@
         }
 
         function addPostsToTrendColumn(trendTitle, column) {
-            // Get tweets for this hashtag from accumulated data
-            const tweets = accumulatedTweets;
+            refreshPostsForTrendColumn(trendTitle, column);
+        }
+
+        function refreshPostsForTrendColumn(trendTitle, column) {
+            if (!trendTitle || !column) {
+                return;
+            }
+
+            // Clear previous post cards for this column before rebuilding.
+            const existingPostCards = column.querySelectorAll('.trend-post-card');
+            existingPostCards.forEach(card => card.remove());
+
+            // Keep only posts from the latest iteration for dropped trend columns.
+            const tweets = latestIterationTweets;
             const hashtagTweets = tweets.filter(tweet => {
                 if (!tweet.hashtags) return false;
                 const tweetHashtags = tweet.hashtags.split(',').map(h => h.trim().toLowerCase());
@@ -998,7 +1065,11 @@
                     const newCard = document.createElement('div');
                     newCard.className = 'trend-card';
                     newCard.draggable = true;
-                    newCard.innerHTML = draggedElement.innerHTML;
+                    const trendTitle = draggedElement.querySelector('.trend-title')?.textContent;
+                    const trendData = findCurrentTrendDataByTitle(trendTitle);
+                    newCard.innerHTML = trendData
+                        ? renderTrendCardHtml(trendData, isHashtagMode)
+                        : draggedElement.innerHTML;
                     
                     // Add drag event listeners to new card
                     newCard.addEventListener('dragstart', handleDragStart);
@@ -1016,7 +1087,6 @@
                     // draggedElement.remove(); // REMOVED - keep original
                     
                     // Add posts to this trend column
-                    const trendTitle = draggedElement.querySelector('.trend-title')?.textContent;
                     if (trendTitle) {
                         addPostsToTrendColumn(trendTitle, column);
                     }
