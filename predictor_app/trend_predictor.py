@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 _EMBEDDER_LOCK = threading.Lock()
 _EMBEDDER = None
+_KEYBERT_LOCK = threading.Lock()
+_KEYBERT_MODEL = None
 
 
 def _get_embedder():
@@ -27,6 +29,21 @@ def _get_embedder():
 
         _EMBEDDER = SentenceTransformer("all-MiniLM-L6-v2")
         return _EMBEDDER
+
+
+def _get_keybert():
+    global _KEYBERT_MODEL
+    if _KEYBERT_MODEL is not None:
+        return _KEYBERT_MODEL
+
+    with _KEYBERT_LOCK:
+        if _KEYBERT_MODEL is not None:
+            return _KEYBERT_MODEL
+
+        from keybert import KeyBERT
+
+        _KEYBERT_MODEL = KeyBERT(model=_get_embedder())
+        return _KEYBERT_MODEL
 
 
 def _artifact_path() -> Path:
@@ -219,3 +236,183 @@ def predict_views_for_tweet(tweet) -> int:
     except Exception:
         logger.exception("predict_views_for_tweet: failed to read y_pred[0]")
         return 0
+
+
+def cluster_by_trends(tweets: list[str], distance_threshold: float = 0.35) -> dict[int, int]:
+    """Cluster tweets by semantic meaning.
+
+    Args:
+        tweets: List of tweet texts.
+        distance_threshold: Cosine distance threshold for agglomerative clustering.
+
+    Returns:
+        Mapping {tweet_index: cluster_index}.
+    """
+    if not tweets:
+        return {}
+
+    cleaned = [(t or "").strip() for t in tweets]
+    non_empty_indices = [i for i, text in enumerate(cleaned) if text]
+
+    if not non_empty_indices:
+        return {i: i for i in range(len(tweets))}
+
+    text_model = _get_embedder()
+    embeddings = text_model.encode(
+        [cleaned[i] for i in non_empty_indices],
+        show_progress_bar=False,
+        convert_to_tensor=True,
+    )
+
+    # Popular ready-to-use semantic clustering from sentence-transformers.
+    from sentence_transformers.util import community_detection
+
+    similarity_threshold = max(0.0, min(1.0, 1.0 - float(distance_threshold)))
+    communities = community_detection(
+        embeddings=embeddings,
+        threshold=similarity_threshold,
+        min_community_size=1,
+    )
+
+    result: dict[int, int] = {}
+    for cluster_idx, community in enumerate(communities):
+        for local_idx in community:
+            tweet_idx = non_empty_indices[int(local_idx)]
+            result[tweet_idx] = cluster_idx
+
+    # Put empty tweets in separate singleton clusters.
+    next_cluster = (max(result.values()) + 1) if result else 0
+    for idx, text in enumerate(cleaned):
+        if not text:
+            result[idx] = next_cluster
+            next_cluster += 1
+
+    return result
+
+
+def define_cluster_name(tweet_to_cluster: dict[int, int], tweets: list[str]) -> dict[int, str]:
+    """Generate short 1-3 word names for each discovered cluster.
+
+    Args:
+        tweet_to_cluster: Mapping {tweet_index: cluster_index}.
+        tweets: List of tweet texts.
+
+    Returns:
+        Mapping {cluster_index: cluster_name}.
+    """
+    if not tweet_to_cluster:
+        return {}
+
+    from collections import Counter, defaultdict
+    import re
+
+    cluster_to_tweets = defaultdict(list)
+    for tweet_idx, cluster_idx in tweet_to_cluster.items():
+        if 0 <= tweet_idx < len(tweets):
+            text = (tweets[tweet_idx] or "").strip()
+            if text:
+                cluster_to_tweets[int(cluster_idx)].append(text)
+
+    cluster_names: dict[int, str] = {}
+
+    for cluster_idx, texts in cluster_to_tweets.items():
+        if not texts:
+            cluster_names[cluster_idx] = ""
+            continue
+
+        try:
+            kw_model = _get_keybert()
+            merged_text = " ".join(texts)
+
+            keywords = kw_model.extract_keywords(
+                merged_text,
+                keyphrase_ngram_range=(1, 3),
+                stop_words="english",
+                use_mmr=True,
+                diversity=0.6,
+                top_n=12,
+            )
+
+            selected_name = ""
+            for phrase, score in keywords:
+                candidate = phrase.strip().lower()
+                words = candidate.split()
+
+                if score < 0.2:
+                    continue
+
+                if not (1 <= len(words) <= 3):
+                    continue
+
+                selected_name = " ".join(words)
+                break
+
+            if selected_name:
+                cluster_names[cluster_idx] = selected_name
+                continue
+
+            # Fallback from raw cluster text, still without synthetic labels.
+            fallback_tokens = re.findall(r"[a-zA-Z]{3,}", merged_text.lower())
+            if fallback_tokens:
+                common = [w for w, _ in Counter(fallback_tokens).most_common(3)]
+                cluster_names[cluster_idx] = " ".join(common)
+            else:
+                cluster_names[cluster_idx] = ""
+        except Exception:
+            logger.exception("define_cluster_name: failed for cluster %s", cluster_idx)
+            merged_text = " ".join(texts)
+            fallback_tokens = re.findall(r"[a-zA-Z]{3,}", merged_text.lower())
+            if fallback_tokens:
+                common = [w for w, _ in Counter(fallback_tokens).most_common(3)]
+                cluster_names[cluster_idx] = " ".join(common)
+            else:
+                cluster_names[cluster_idx] = ""
+
+    return cluster_names
+
+
+def define_similar_cluster(
+    cluster_names: dict[int, str],
+    previous_cluster_names: Iterable[str],
+    similarity_threshold: float = 0.7,
+) -> dict[int, str]:
+    """Replace new cluster names with semantically similar old names.
+
+    Args:
+        cluster_names: Mapping {cluster_index: generated_cluster_name}.
+        previous_cluster_names: Past cluster names from previous iterations.
+        similarity_threshold: Minimum cosine similarity to reuse an old name.
+
+    Returns:
+        Mapping {cluster_index: verified_cluster_name}.
+    """
+    if not cluster_names:
+        return {}
+
+    old_names = [str(name).strip() for name in previous_cluster_names if str(name).strip()]
+    if not old_names:
+        return dict(cluster_names)
+
+    text_model = _get_embedder()
+    old_embeddings = text_model.encode(old_names, show_progress_bar=False, normalize_embeddings=True)
+
+    import numpy as np
+
+    verified = {}
+    for cluster_idx, new_name in cluster_names.items():
+        current_name = (new_name or "").strip()
+        if not current_name:
+            verified[cluster_idx] = new_name
+            continue
+
+        new_embedding = text_model.encode([current_name], show_progress_bar=False, normalize_embeddings=True)[0]
+        similarities = np.dot(old_embeddings, new_embedding)
+        best_idx = int(np.argmax(similarities))
+        best_score = float(similarities[best_idx])
+
+        if best_score >= similarity_threshold:
+            verified[cluster_idx] = old_names[best_idx]
+        else:
+            verified[cluster_idx] = current_name
+
+    return verified
