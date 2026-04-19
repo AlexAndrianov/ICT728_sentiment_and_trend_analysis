@@ -85,6 +85,68 @@
         opacity: 0.8;
       }
 
+      .user-session-info {
+        position: absolute;
+        top: 18px;
+        right: 28px;
+        z-index: 10;
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        color: #1a202c;
+        font-size: 14px;
+        font-weight: 500;
+      }
+
+      .user-session-icon {
+        width: 34px;
+        height: 34px;
+        border: 2px solid #f56565;
+        border-radius: 50%;
+        position: relative;
+        flex-shrink: 0;
+        margin-top: 2px;
+      }
+
+      .user-session-icon::before {
+        content: "";
+        position: absolute;
+        top: 6px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 8px;
+        height: 8px;
+        border: 2px solid #f56565;
+        border-radius: 50%;
+        background: transparent;
+      }
+
+      .user-session-icon::after {
+        content: "";
+        position: absolute;
+        bottom: 5px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 16px;
+        height: 9px;
+        border: 2px solid #f56565;
+        border-top: none;
+        border-radius: 0 0 12px 12px;
+      }
+
+      .user-session-text {
+        line-height: 1.3;
+        text-align: left;
+      }
+
+      .user-session-name {
+        font-weight: 500;
+      }
+
+      .user-session-visit {
+        font-weight: 500;
+      }
+
       .social-networks {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
@@ -116,7 +178,6 @@
       .social-card.selected {
         border-color: #54e142;
         border-width: 3px;
-        /* background: rgba(159, 122, 234, 0.1); */
       }
 
       .social-icon {
@@ -131,13 +192,6 @@
         font-weight: bold;
         color: white;
       }
-
-      /* .twitter-icon { background: linear-gradient(135deg, #1DA1F2, #1a91da); }
-        .reddit-icon { background: linear-gradient(135deg, #FF4500, #ff3300); }
-        .instagram-icon { background: linear-gradient(135deg, #E4405F, #c13584, #833ab4, #fd1d1d, #f56040, #f77737); }
-        .facebook-icon { background: linear-gradient(135deg, #1877F2, #166fe5); }
-        .linkedin-icon { background: linear-gradient(135deg, #0077B5, #005885); }
-        .tiktok-icon { background: linear-gradient(135deg, #000000, #ff0050, #00f2ea); } */
 
       .social-name {
         font-size: 1.2rem;
@@ -292,6 +346,13 @@
           min-width: 120px;
           justify-content: center;
         }
+
+        .user-session-info {
+          top: 14px;
+          right: 16px;
+          transform: scale(0.92);
+          transform-origin: top right;
+        }
       }
 
       @media (max-width: 1024px) and (min-width: 769px) {
@@ -304,6 +365,17 @@
   </head>
   <body>
     <div class="background-pattern"></div>
+
+    <div class="user-session-info">
+      <div class="user-session-icon"></div>
+      <div class="user-session-text">
+        <div class="user-session-name" id="loggedInUserName">User Name</div>
+        <div class="user-session-visit">
+          Last visit:
+          <span id="loggedInUserVisitDate">07.07.2026</span>
+        </div>
+      </div>
+    </div>
 
     <div class="container">
       <header>
@@ -406,7 +478,6 @@
           card.addEventListener("click", function () {
             this.classList.toggle("selected");
 
-            // Optional: Store selected networks
             const selectedNetworks = Array.from(
               document.querySelectorAll(".social-card.selected")
             ).map((card) => card.dataset.network);
@@ -414,25 +485,31 @@
             console.log("Selected networks:", selectedNetworks);
           });
         });
+
+        const storedUser = localStorage.getItem("loggedInUser");
+
+        if (storedUser) {
+          const userData = JSON.parse(storedUser);
+          document.getElementById("loggedInUserName").textContent =
+            userData.name || "User Name";
+          document.getElementById("loggedInUserVisitDate").textContent =
+            userData.lastVisit || "07.07.2026";
+        }
       });
 
       function navigateToDashboard() {
-        // Add fade-out animation
         document.body.style.transition = "opacity 0.8s ease-in-out";
         document.body.style.opacity = "0";
 
-        // Navigate after animation completes
         setTimeout(() => {
           window.location.href = "{% url 'index' %}";
         }, 800);
       }
 
       function navigateToTrends() {
-        // Add fade-out animation
         document.body.style.transition = "opacity 0.8s ease-in-out";
         document.body.style.opacity = "0";
 
-        // Navigate after animation completes
         setTimeout(() => {
           window.location.href = "{% url 'trends' %}";
         }, 800);
