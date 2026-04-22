@@ -34,7 +34,136 @@ gTwitsAnalysisData_LOCK = threading.Lock()
 # Dictionary<iteration_number, Dictionary<hashtag_title, hashtag_stats>>
 g_hashtag_stats: dict[int, dict[str, dict]] = {}
 
+# Dictionary<iteration_number, Dictionary<cluster_name, cluster_stats>>
+g_clusters_stats: dict[int, dict[str, dict]] = {}
+
 logger = logging.getLogger("predictor_app")
+
+
+def calculate_hashtag_stat(
+    tweets,
+    previous_iteration,
+    current_iteration,
+    predict_views_for_tweet,
+):
+    import concurrent.futures
+    from collections import defaultdict
+
+    hashtag_groups = defaultdict(list)
+    for tweet in tweets:
+        if tweet.hashtags:
+            hashtags_list = [tag.strip() for tag in tweet.hashtags.split(',') if tag.strip()]
+            for hashtag in hashtags_list:
+                hashtag_groups[hashtag].append(tweet)
+
+    hashtag_stats = []
+    for hashtag, tweet_list in hashtag_groups.items():
+        # Calculate forecast views in parallel
+        def get_tweet_views(tweet):
+            try:
+                # Check cache first
+                with gTwitsAnalysisData_LOCK:
+                    if tweet.id in gTwitsAnalysisData:
+                        cached_data = gTwitsAnalysisData[tweet.id]
+                        if 'forecast_views' in cached_data:
+                            return cached_data['forecast_views']
+
+                # Calculate if not in cache
+                predicted_views = predict_views_for_tweet(tweet)
+                views = int(predicted_views or 0)
+
+                # Cache the result
+                with gTwitsAnalysisData_LOCK:
+                    if tweet.id not in gTwitsAnalysisData:
+                        gTwitsAnalysisData[tweet.id] = {}
+                    gTwitsAnalysisData[tweet.id]['forecast_views'] = views
+
+                return views
+            except:
+                return 0
+
+        # Use ThreadPoolExecutor for parallel processing
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            # Submit all tasks
+            future_to_tweet = {executor.submit(get_tweet_views, tweet): tweet for tweet in tweet_list}
+
+            # Collect results
+            total_views = 0
+            for future in concurrent.futures.as_completed(future_to_tweet):
+                try:
+                    views = future.result(timeout=10)  # 10 second timeout
+                    total_views += views
+                except Exception as e:
+                    print(f"Error calculating views for tweet: {e}")
+                    total_views += 0
+
+        hashtag_stats.append({
+            'title': hashtag,
+            'engagement': f"{len(tweet_list)} posts",
+            'engagement_count': len(tweet_list),
+            'total_views': total_views,
+            'growth': f"+{len(tweet_list) * 5}%",  # Simplified growth calculation
+            'sentiment': None,  # Will be filled after sentiment calculation
+            'total_views_diff': 0,
+            'sentiment_diff': 0,
+            'engagement_diff': 0,
+        })
+
+    # Calculate sentiment for each hashtag group
+    for hashtag_stat in hashtag_stats:
+        hashtag = hashtag_stat['title']
+        tweet_list = hashtag_groups.get(hashtag, [])
+
+        sentiment_sum = 0
+        tweet_count = len(tweet_list)
+        for tweet in tweet_list:
+            with gTwitsAnalysisData_LOCK:
+                if tweet.id in gTwitsAnalysisData:
+                    cached_data = gTwitsAnalysisData[tweet.id]
+                    if 'sentiment' in cached_data:
+                        label = cached_data['sentiment'].get('label')
+                        if label == 'positive':
+                            sentiment_sum += 1
+                        elif label == 'neutral':
+                            sentiment_sum += 0.5
+                        elif label == 'negative':
+                            sentiment_sum += 0
+
+        sentiment_percentage = 0
+        if tweet_count > 0:
+            sentiment_percentage = round((sentiment_sum / tweet_count) * 100, 1)
+        hashtag_stat['sentiment'] = sentiment_percentage
+
+    prev_iteration_stats = g_hashtag_stats.get(previous_iteration, {})
+
+    for hashtag_stat in hashtag_stats:
+        prev_hashtag_stat = prev_iteration_stats.get(hashtag_stat['title'])
+        if prev_hashtag_stat:
+            previous_total_views = int(prev_hashtag_stat.get('total_views', 0) or 0)
+            current_total_views = int(hashtag_stat['total_views'] or 0)
+            if previous_total_views > 0:
+                hashtag_stat['total_views_diff'] = round(
+                    ((current_total_views - previous_total_views) / previous_total_views) * 100,
+                    1
+                )
+            else:
+                hashtag_stat['total_views_diff'] = 0
+            hashtag_stat['sentiment_diff'] = round(float(hashtag_stat['sentiment'] or 0) - float(prev_hashtag_stat.get('sentiment', 0) or 0), 1)
+            hashtag_stat['engagement_diff'] = hashtag_stat['engagement_count'] - int(prev_hashtag_stat.get('engagement_count', 0) or 0)
+        else:
+            hashtag_stat['total_views_diff'] = 0
+            hashtag_stat['sentiment_diff'] = 0
+            hashtag_stat['engagement_diff'] = 0
+
+    # Sort by total views (descending)
+    hashtag_stats.sort(key=lambda x: x['total_views'], reverse=True)
+
+    g_hashtag_stats[current_iteration] = {
+        hashtag_stat['title']: hashtag_stat.copy()
+        for hashtag_stat in hashtag_stats
+    }
+
+    return hashtag_stats
 
 
 def tweet_list(request):
@@ -60,11 +189,12 @@ def landing(request):
 def trends(request):
     """Trends dashboard page"""
     # Reset the iteration counter when page is loaded fresh
-    global _LAST_PROCESSED_TWEET_ID, _TRENDS_ITERATION_INDEX, g_hashtag_stats
+    global _LAST_PROCESSED_TWEET_ID, _TRENDS_ITERATION_INDEX, g_hashtag_stats, g_clusters_stats
     with _TRENDS_ITERATION_LOCK:
         _LAST_PROCESSED_TWEET_ID = 0
         _TRENDS_ITERATION_INDEX = 0
         g_hashtag_stats = {}
+        g_clusters_stats = {}
     
     # Return empty context - data will be loaded via async iteration
     context = {
@@ -74,6 +204,45 @@ def trends(request):
     
     return render(request, 'predictor_app/trends.html', context)
 
+def define_clusters_for_tweets(tweets: list[TweetPost]) -> dict[int, str]:
+    """Define clusters for a list of tweets and return mapping of tweet_id to cluster label."""
+    from collections import Counter
+    from .trend_predictor import cluster_by_trends, define_cluster_name, define_similar_cluster
+
+    if not tweets:
+        return {}
+
+    tweet_texts = [(tweet.content or "").strip() for tweet in tweets]
+    tweet_to_cluster_idx = cluster_by_trends(tweet_texts)
+    cluster_to_name = define_cluster_name(tweet_to_cluster_idx, tweet_texts)
+
+    current_iteration = _TRENDS_ITERATION_INDEX
+    previous_iteration = current_iteration - 1
+    previous_cluster_names = list(g_clusters_stats.get(previous_iteration, {}).keys())
+
+    # Reuse old cluster names when semantic similarity is high.
+    verified_cluster_names = define_similar_cluster(cluster_to_name, previous_cluster_names)
+
+    tweet_to_cluster_label: dict[int, str] = {}
+    labels = []
+    for tweet_idx, tweet in enumerate(tweets):
+        cluster_idx = int(tweet_to_cluster_idx.get(tweet_idx, tweet_idx))
+        label = (verified_cluster_names.get(cluster_idx) or "").strip()
+        if not label:
+            label = f"cluster-{cluster_idx + 1}"
+        tweet_to_cluster_label[tweet.id] = label
+        labels.append(label)
+
+    counts = Counter(labels)
+    g_clusters_stats[current_iteration] = {
+        label: {
+            "cluster_label": label,
+            "tweet_count": count,
+        }
+        for label, count in counts.items()
+    }
+
+    return tweet_to_cluster_label
 
 @require_http_methods(["GET"])
 def get_trends_iteration(request):
@@ -95,6 +264,7 @@ def get_trends_iteration(request):
             _TRENDS_ITERATION_INDEX += 1
             current_iteration = _TRENDS_ITERATION_INDEX
             previous_iteration = current_iteration - 1
+            tweet_to_cluster = define_clusters_for_tweets(tweets)
             
             # Convert to JSON-safe format
             tweets_data = []
@@ -111,6 +281,7 @@ def get_trends_iteration(request):
                     'hashtags': tweet.hashtags,
                     'sentiment': None,  # Will be filled after calculation
                     'forecast_views': None,  # Will be filled after calculation
+                    'cluster_label': tweet_to_cluster.get(tweet.id),  # filled from tweet_to_cluster
                 })
             
             # Calculate sentiment for all tweets in batch (parallel processing)
@@ -136,23 +307,6 @@ def get_trends_iteration(request):
                     except Exception as e:
                         logger.warning("Error calculating sentiment for tweet: %s", e)
             
-            # Calculate sentiment percentage (weighted: positive=1, neutral=0.5, negative=0)
-            sentiment_sum = 0
-            total_count = len(tweets)
-            for tweet_id, sentiment in sentiment_results.items():
-                if sentiment:
-                    label = sentiment.get('label')
-                    if label == 'positive':
-                        sentiment_sum += 1
-                    elif label == 'neutral':
-                        sentiment_sum += 0.5
-                    elif label == 'negative':
-                        sentiment_sum += 0
-            
-            sentiment_percentage = 0
-            if total_count > 0:
-                sentiment_percentage = round((sentiment_sum / total_count) * 100, 1)
-            
             # Fill sentiment data in tweets_data
             for tweet_data in tweets_data:
                 if tweet_data['id'] in sentiment_results:
@@ -161,124 +315,12 @@ def get_trends_iteration(request):
                         tweet_data['sentiment'] = sentiment_result.get('label')
                         tweet_data['sentiment_score'] = sentiment_result.get('score')
             
-            # Group tweets by hashtags and calculate forecast views
-            from collections import defaultdict
-            hashtag_groups = defaultdict(list)
-            for tweet in tweets:
-                if tweet.hashtags:
-                    hashtags_list = [tag.strip() for tag in tweet.hashtags.split(',') if tag.strip()]
-                    for hashtag in hashtags_list:
-                        hashtag_groups[hashtag].append(tweet)
-            
-            # Calculate total forecast views for each hashtag (parallel processing)
-            import concurrent.futures
-            from .trend_predictor import predict_views_for_tweet
-            
-            hashtag_stats = []
-            for hashtag, tweet_list in hashtag_groups.items():
-                # Calculate forecast views in parallel
-                def get_tweet_views(tweet):
-                    try:
-                        # Check cache first
-                        with gTwitsAnalysisData_LOCK:
-                            if tweet.id in gTwitsAnalysisData:
-                                cached_data = gTwitsAnalysisData[tweet.id]
-                                if 'forecast_views' in cached_data:
-                                    return cached_data['forecast_views']
-                        
-                        # Calculate if not in cache
-                        predicted_views = predict_views_for_tweet(tweet)
-                        views = int(predicted_views or 0)
-                        
-                        # Cache the result
-                        with gTwitsAnalysisData_LOCK:
-                            if tweet.id not in gTwitsAnalysisData:
-                                gTwitsAnalysisData[tweet.id] = {}
-                            gTwitsAnalysisData[tweet.id]['forecast_views'] = views
-                        
-                        return views
-                    except:
-                        return 0
-                
-                # Use ThreadPoolExecutor for parallel processing
-                with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-                    # Submit all tasks
-                    future_to_tweet = {executor.submit(get_tweet_views, tweet): tweet for tweet in tweet_list}
-                    
-                    # Collect results
-                    total_views = 0
-                    for future in concurrent.futures.as_completed(future_to_tweet):
-                        try:
-                            views = future.result(timeout=10)  # 10 second timeout
-                            total_views += views
-                        except Exception as e:
-                            print(f"Error calculating views for tweet: {e}")
-                            total_views += 0
-                
-                hashtag_stats.append({
-                    'title': hashtag,
-                    'engagement': f"{len(tweet_list)} posts",
-                    'engagement_count': len(tweet_list),
-                    'total_views': total_views,
-                    'growth': f"+{len(tweet_list) * 5}%",  # Simplified growth calculation
-                    'sentiment': None,  # Will be filled after sentiment calculation
-                    'total_views_diff': 0,
-                    'sentiment_diff': 0,
-                    'engagement_diff': 0,
-                })
-            
-            # Calculate sentiment for each hashtag group
-            for hashtag_stat in hashtag_stats:
-                hashtag = hashtag_stat['title']
-                tweet_list = hashtag_groups.get(hashtag, [])
-                
-                sentiment_sum = 0
-                tweet_count = len(tweet_list)
-                for tweet in tweet_list:
-                    with gTwitsAnalysisData_LOCK:
-                        if tweet.id in gTwitsAnalysisData:
-                            cached_data = gTwitsAnalysisData[tweet.id]
-                            if 'sentiment' in cached_data:
-                                label = cached_data['sentiment'].get('label')
-                                if label == 'positive':
-                                    sentiment_sum += 1
-                                elif label == 'neutral':
-                                    sentiment_sum += 0.5
-                                elif label == 'negative':
-                                    sentiment_sum += 0
-                
-                sentiment_percentage = 0
-                if tweet_count > 0:
-                    sentiment_percentage = round((sentiment_sum / tweet_count) * 100, 1)
-                hashtag_stat['sentiment'] = sentiment_percentage
-
-            prev_iteration_stats = g_hashtag_stats.get(previous_iteration, {})
-            for hashtag_stat in hashtag_stats:
-                prev_hashtag_stat = prev_iteration_stats.get(hashtag_stat['title'])
-                if prev_hashtag_stat:
-                    previous_total_views = int(prev_hashtag_stat.get('total_views', 0) or 0)
-                    current_total_views = int(hashtag_stat['total_views'] or 0)
-                    if previous_total_views > 0:
-                        hashtag_stat['total_views_diff'] = round(
-                            ((current_total_views - previous_total_views) / previous_total_views) * 100,
-                            1
-                        )
-                    else:
-                        hashtag_stat['total_views_diff'] = 0
-                    hashtag_stat['sentiment_diff'] = round(float(hashtag_stat['sentiment'] or 0) - float(prev_hashtag_stat.get('sentiment', 0) or 0), 1)
-                    hashtag_stat['engagement_diff'] = hashtag_stat['engagement_count'] - int(prev_hashtag_stat.get('engagement_count', 0) or 0)
-                else:
-                    hashtag_stat['total_views_diff'] = 0
-                    hashtag_stat['sentiment_diff'] = 0
-                    hashtag_stat['engagement_diff'] = 0
-            
-            # Sort by total views (descending)
-            hashtag_stats.sort(key=lambda x: x['total_views'], reverse=True)
-
-            g_hashtag_stats[current_iteration] = {
-                hashtag_stat['title']: hashtag_stat.copy()
-                for hashtag_stat in hashtag_stats
-            }
+            hashtag_stats = calculate_hashtag_stat(
+                tweets=tweets,
+                previous_iteration=previous_iteration,
+                current_iteration=current_iteration,
+                predict_views_for_tweet=predict_views_for_tweet,
+            )
             
             # Fill forecast_views data in tweets_data from cache (after calculations)
             for tweet_data in tweets_data:
@@ -292,7 +334,6 @@ def get_trends_iteration(request):
                 'tweets_data': tweets_data,
                 'hashtag_stats': hashtag_stats,
                 'has_more': True,
-                'sentiment': sentiment_percentage
             })
             
     except Exception as e:
