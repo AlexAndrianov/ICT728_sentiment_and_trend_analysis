@@ -166,6 +166,124 @@ def calculate_hashtag_stat(
     return hashtag_stats
 
 
+def calculate_trends_stat(
+    tweets,
+    tweet_to_cluster,
+    previous_iteration,
+    current_iteration,
+    predict_views_for_tweet,
+):
+    import concurrent.futures
+    from collections import defaultdict
+
+    cluster_groups = defaultdict(list)
+    for tweet in tweets:
+        cluster_label = (tweet_to_cluster.get(tweet.id) or "").strip()
+        if cluster_label:
+            cluster_groups[cluster_label].append(tweet)
+
+    trends_stats = []
+    for cluster_label, tweet_list in cluster_groups.items():
+        def get_tweet_views(tweet):
+            try:
+                with gTwitsAnalysisData_LOCK:
+                    if tweet.id in gTwitsAnalysisData:
+                        cached_data = gTwitsAnalysisData[tweet.id]
+                        if 'forecast_views' in cached_data:
+                            return cached_data['forecast_views']
+
+                predicted_views = predict_views_for_tweet(tweet)
+                views = int(predicted_views or 0)
+
+                with gTwitsAnalysisData_LOCK:
+                    if tweet.id not in gTwitsAnalysisData:
+                        gTwitsAnalysisData[tweet.id] = {}
+                    gTwitsAnalysisData[tweet.id]['forecast_views'] = views
+
+                return views
+            except:
+                return 0
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            future_to_tweet = {executor.submit(get_tweet_views, tweet): tweet for tweet in tweet_list}
+
+            total_views = 0
+            for future in concurrent.futures.as_completed(future_to_tweet):
+                try:
+                    views = future.result(timeout=10)
+                    total_views += views
+                except Exception as e:
+                    print(f"Error calculating views for tweet: {e}")
+                    total_views += 0
+
+        trends_stats.append({
+            'title': cluster_label,
+            'cluster_label': cluster_label,
+            'engagement': f"{len(tweet_list)} posts",
+            'engagement_count': len(tweet_list),
+            'total_views': total_views,
+            'growth': f"+{len(tweet_list) * 5}%",
+            'sentiment': None,
+            'total_views_diff': 0,
+            'sentiment_diff': 0,
+            'engagement_diff': 0,
+        })
+
+    for trend_stat in trends_stats:
+        cluster_label = trend_stat['title']
+        tweet_list = cluster_groups.get(cluster_label, [])
+
+        sentiment_sum = 0
+        tweet_count = len(tweet_list)
+        for tweet in tweet_list:
+            with gTwitsAnalysisData_LOCK:
+                if tweet.id in gTwitsAnalysisData:
+                    cached_data = gTwitsAnalysisData[tweet.id]
+                    if 'sentiment' in cached_data:
+                        label = cached_data['sentiment'].get('label')
+                        if label == 'positive':
+                            sentiment_sum += 1
+                        elif label == 'neutral':
+                            sentiment_sum += 0.5
+                        elif label == 'negative':
+                            sentiment_sum += 0
+
+        sentiment_percentage = 0
+        if tweet_count > 0:
+            sentiment_percentage = round((sentiment_sum / tweet_count) * 100, 1)
+        trend_stat['sentiment'] = sentiment_percentage
+
+    prev_iteration_stats = g_clusters_stats.get(previous_iteration, {})
+
+    for trend_stat in trends_stats:
+        prev_trend_stat = prev_iteration_stats.get(trend_stat['title'])
+        if prev_trend_stat:
+            previous_total_views = int(prev_trend_stat.get('total_views', 0) or 0)
+            current_total_views = int(trend_stat['total_views'] or 0)
+            if previous_total_views > 0:
+                trend_stat['total_views_diff'] = round(
+                    ((current_total_views - previous_total_views) / previous_total_views) * 100,
+                    1
+                )
+            else:
+                trend_stat['total_views_diff'] = 0
+            trend_stat['sentiment_diff'] = round(float(trend_stat['sentiment'] or 0) - float(prev_trend_stat.get('sentiment', 0) or 0), 1)
+            trend_stat['engagement_diff'] = trend_stat['engagement_count'] - int(prev_trend_stat.get('engagement_count', 0) or 0)
+        else:
+            trend_stat['total_views_diff'] = 0
+            trend_stat['sentiment_diff'] = 0
+            trend_stat['engagement_diff'] = 0
+
+    trends_stats.sort(key=lambda x: x['total_views'], reverse=True)
+
+    g_clusters_stats[current_iteration] = {
+        trend_stat['title']: trend_stat.copy()
+        for trend_stat in trends_stats
+    }
+
+    return trends_stats
+
+
 def tweet_list(request):
     tweets = TweetPost.objects.all()
 
@@ -321,6 +439,14 @@ def get_trends_iteration(request):
                 current_iteration=current_iteration,
                 predict_views_for_tweet=predict_views_for_tweet,
             )
+
+            trends_stats = calculate_trends_stat(
+                tweets=tweets,
+                tweet_to_cluster=tweet_to_cluster,
+                previous_iteration=previous_iteration,
+                current_iteration=current_iteration,
+                predict_views_for_tweet=predict_views_for_tweet,
+            )
             
             # Fill forecast_views data in tweets_data from cache (after calculations)
             for tweet_data in tweets_data:
@@ -333,6 +459,7 @@ def get_trends_iteration(request):
             return JsonResponse({
                 'tweets_data': tweets_data,
                 'hashtag_stats': hashtag_stats,
+                'trends_stats': trends_stats,
                 'has_more': True,
             })
             
