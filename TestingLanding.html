@@ -1,0 +1,249 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Smart Social Media Analytics Platform</title>
+
+    <!-- ✅ jsPDF libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        min-height: 100vh;
+        background: linear-gradient(
+          135deg,
+          rgba(66, 153, 225, 0.1) 0%,
+          rgba(159, 122, 234, 0.1) 100%
+        );
+        position: relative;
+        overflow-x: hidden;
+      }
+
+      .background-pattern {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-image: radial-gradient(
+            circle at 20% 50%,
+            rgba(66, 153, 225, 0.1) 0%,
+            transparent 50%
+          ),
+          radial-gradient(
+            circle at 80% 80%,
+            rgba(159, 122, 234, 0.1) 0%,
+            transparent 50%
+          ),
+          radial-gradient(
+            circle at 40% 20%,
+            rgba(236, 72, 153, 0.1) 0%,
+            transparent 50%
+          );
+        z-index: -1;
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 2rem;
+        position: relative;
+        z-index: 1;
+      }
+
+      header {
+        text-align: center;
+        margin-bottom: 2rem;
+      }
+
+      h1 {
+        font-size: 2.8rem;
+        font-weight: 700;
+        background: linear-gradient(
+          135deg,
+          #4299e1 0%,
+          #9f7aea 50%,
+          #ec4899 100%
+        );
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 1rem;
+      }
+
+      .subtitle {
+        font-size: 1.76rem;
+        font-weight: 700;
+        color: #4a5568;
+        opacity: 0.8;
+      }
+
+      .social-networks {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1.5rem;
+        max-width: 900px;
+        margin: 0 auto 4rem;
+      }
+
+      .social-card {
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 15px;
+        padding: 1.5rem;
+        text-align: center;
+        cursor: pointer;
+        border: 2px solid transparent;
+        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.1);
+      }
+
+      .social-card:hover {
+        transform: translateY(-8px);
+        border-color: #54e142;
+      }
+
+      .social-card.selected {
+        border-color: #54e142;
+      }
+
+      .social-icon {
+        width: 60px;
+        height: 60px;
+        margin: 0 auto 0.8rem;
+      }
+
+      .social-name {
+        font-size: 1.2rem;
+        font-weight: 600;
+        color: #2d3748;
+      }
+
+      .social-description {
+        color: #718096;
+        font-size: 0.85rem;
+      }
+
+      /* BUTTONS */
+      .dashboard-button,
+      .trends-button,
+      .report-button {
+        position: fixed;
+        bottom: 2rem;
+        color: white;
+        border: none;
+        padding: 1rem 2rem;
+        border-radius: 50px;
+        font-size: 1.1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: 0.3s;
+        z-index: 1000;
+      }
+
+      .dashboard-button {
+        right: 2rem;
+        background: linear-gradient(135deg, #4299e1, #9f7aea);
+      }
+
+      .trends-button {
+        right: 19rem;
+        background: linear-gradient(135deg, #ec4899, #f59e0b);
+      }
+
+      .report-button {
+        right: 10.5rem;
+        background: linear-gradient(135deg, #10b981, #3b82f6);
+      }
+
+      .dashboard-button:hover,
+      .trends-button:hover,
+      .report-button:hover {
+        transform: translateY(-3px);
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="background-pattern"></div>
+
+    <div class="container">
+      <header>
+        <h1>Smart Social Media Analytics Platform</h1>
+        <p class="subtitle">Trend Prediction For Digital Age</p>
+      </header>
+
+      <main>
+        <section class="social-networks">
+
+          <div class="social-card" data-network="twitter">
+            <img class="social-icon" src="{% static 'logo/twitter.png' %}" />
+            <h3 class="social-name">Twitter</h3>
+            <p class="social-description">Real-time tweet analysis.</p>
+          </div>
+
+          <div class="social-card" data-network="reddit">
+            <img class="social-icon" src="{% static 'logo/reddit.png' %}" />
+            <h3 class="social-name">Reddit</h3>
+            <p class="social-description">Subreddit trend tracking.</p>
+          </div>
+
+          <div class="social-card" data-network="instagram">
+            <img class="social-icon" src="{% static 'logo/instagram.png' %}" />
+            <h3 class="social-name">Instagram</h3>
+            <p class="social-description">Visual trend analysis.</p>
+          </div>
+
+        </section>
+      </main>
+    </div>
+
+    <!-- BUTTONS -->
+    <button class="dashboard-button" onclick="navigateToDashboard()">Dashboard →</button>
+    <button class="trends-button" onclick="navigateToTrends()">Trends →</button>
+    <button class="report-button" onclick="generateReportPDF()">Make Report →</button>
+
+    <script>
+      // NAVIGATION
+      function navigateToDashboard() {
+        window.location.href = "{% url 'index' %}";
+      }
+
+      function navigateToTrends() {
+        window.location.href = "{% url 'trends' %}";
+      }
+
+      // ✅ PDF GENERATION
+      function generateReportPDF() {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+
+        doc.setFontSize(16);
+        doc.text("Social Media Analytics Report", 14, 15);
+
+        const tableData = [
+          ["Date Time", "Trend Name", "Forecast Views", "Sentiment", "Dynamic (%)", "Number of Posts", "Viral Posts"],
+          ["2026-04-24 10:00", "AI Trend", "12000", "Positive", "78%", "340", "45"],
+          ["2026-04-24 10:00", "Crypto Surge", "9500", "Neutral", "65%", "280", "32"],
+          ["2026-04-24 10:00", "Sports Buzz", "15000", "Positive", "82%", "410", "60"],
+          ["2026-04-24 10:00", "Social Growth", "18000", "Positive", "88%", "500", "75"]
+        ];
+
+        doc.autoTable({
+          head: [tableData[0]],
+          body: tableData.slice(1),
+          startY: 25,
+        });
+
+        doc.save("social_media_report.pdf");
+      }
+    </script>
+  </body>
+</html>
