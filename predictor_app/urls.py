@@ -13,4 +13,5 @@ urlpatterns = [
     path("forecast-views/<int:tweet_id>/", views.forecast_views, name="forecast_views"),
     path("sentiment/<int:tweet_id>/", views.sentiment, name="sentiment"),
     path("trends-iteration/", views.get_trends_iteration, name="get_trends_iteration"),
+    path("trend-analytics/", views.get_trend_analytics, name="get_trend_analytics"),
 ]

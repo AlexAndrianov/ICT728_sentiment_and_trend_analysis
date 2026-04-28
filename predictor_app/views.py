@@ -468,6 +468,101 @@ def get_trends_iteration(request):
         return JsonResponse({'error': str(e), 'tweets_data': [], 'has_more': False}, status=500)
 
 
+def _get_trend_stats_map(trend_type: int) -> dict[int, dict[str, dict]]:
+    if int(trend_type or 0) == 0:
+        return g_hashtag_stats
+    return g_clusters_stats
+
+
+def _find_matching_trend_key(stats_for_iteration: dict[str, dict], trend_name: str) -> str | None:
+    if not stats_for_iteration:
+        return None
+
+    raw = (trend_name or "").strip()
+    if not raw:
+        return None
+
+    if raw in stats_for_iteration:
+        return raw
+
+    lowered = raw.lower()
+    for key in stats_for_iteration.keys():
+        if (key or "").strip().lower() == lowered:
+            return key
+
+    return None
+
+
+@require_http_methods(["GET"])
+def get_trend_analytics(request):
+    trend_name = (request.GET.get("name") or "").strip()
+    trend_type_raw = (request.GET.get("type") or "0").strip()
+
+    try:
+        trend_type = int(trend_type_raw)
+    except ValueError:
+        trend_type = 0
+
+    if not trend_name:
+        return JsonResponse({"error": "Missing 'name'"}, status=400)
+
+    stats_map = _get_trend_stats_map(trend_type)
+    iterations = sorted(stats_map.keys())
+    if not iterations:
+        return JsonResponse({
+            "name": trend_name,
+            "type": trend_type,
+            "series": [],
+            "latest": None,
+        })
+
+    latest_iteration = iterations[-1]
+    latest_iteration_stats = stats_map.get(latest_iteration, {})
+    matching_key = _find_matching_trend_key(latest_iteration_stats, trend_name)
+    if matching_key is None:
+        for it in reversed(iterations):
+            matching_key = _find_matching_trend_key(stats_map.get(it, {}), trend_name)
+            if matching_key is not None:
+                break
+
+    if matching_key is None:
+        return JsonResponse({
+            "name": trend_name,
+            "type": trend_type,
+            "series": [],
+            "latest": None,
+        })
+
+    series = []
+    for it in iterations:
+        it_stats = stats_map.get(it, {})
+        key_for_iteration = _find_matching_trend_key(it_stats, matching_key) or _find_matching_trend_key(it_stats, trend_name)
+        if key_for_iteration is None:
+            continue
+        stat = it_stats.get(key_for_iteration) or {}
+        series.append({
+            "iteration": it,
+            "forecast_views": int(stat.get("total_views", 0) or 0),
+        })
+
+    latest_stat = (latest_iteration_stats.get(matching_key) or {})
+
+    return JsonResponse({
+        "name": matching_key,
+        "type": trend_type,
+        "latest_iteration": latest_iteration,
+        "latest": {
+            "engagement_count": int(latest_stat.get("engagement_count", 0) or 0),
+            "sentiment": float(latest_stat.get("sentiment", 0) or 0),
+            "total_views": int(latest_stat.get("total_views", 0) or 0),
+            "total_views_diff": float(latest_stat.get("total_views_diff", 0) or 0),
+            "sentiment_diff": float(latest_stat.get("sentiment_diff", 0) or 0),
+            "engagement_diff": int(latest_stat.get("engagement_diff", 0) or 0),
+        },
+        "series": series,
+    })
+
+
 def index(request):
     tweets = TweetPost.objects.all()
 
