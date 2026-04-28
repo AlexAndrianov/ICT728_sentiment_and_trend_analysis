@@ -253,6 +253,22 @@
             font-size: 12px;
         }
 
+        .trend-post-avatar {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            overflow: hidden;
+            flex: 0 0 32px;
+        }
+
+        .trend-post-avatar img {
+            width: 64px;
+            height: 64px;
+            display: block;
+            object-fit: cover;
+            border-radius: 50%;
+        }
+
         .trend-post-avatar-placeholder {
             width: 32px;
             height: 32px;
@@ -1306,96 +1322,190 @@
         }
 
         function drawAnalyticsChart(series) {
-            const canvas = document.getElementById('analytic-chart');
-            if (!canvas) {
-                return;
-            }
-
-            const ctx = canvas.getContext('2d');
-            const w = canvas.width;
-            const h = canvas.height;
-
-            ctx.clearRect(0, 0, w, h);
-
-            const padding = { left: 46, right: 18, top: 18, bottom: 34 };
-            const plotW = w - padding.left - padding.right;
-            const plotH = h - padding.top - padding.bottom;
-
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, w, h);
-
-            ctx.strokeStyle = 'rgba(226, 232, 240, 1)';
-            ctx.lineWidth = 1;
-            ctx.strokeRect(padding.left, padding.top, plotW, plotH);
-
-            if (!series || series.length < 2) {
-                ctx.fillStyle = '#64748b';
-                ctx.font = '12px Arial';
-                ctx.fillText('Not enough data yet', padding.left + 10, padding.top + 22);
-                return;
-            }
-
-            const xs = series.map(p => Number(p.iteration || 0));
-            const ys = series.map(p => Number(p.forecast_views || 0));
-            const minX = Math.min(...xs);
-            const maxX = Math.max(...xs);
-            const minY = 0;
-            const maxY = Math.max(...ys, 1);
-
-            function xScale(x) {
-                if (maxX === minX) {
-                    return padding.left;
+            try {
+                const canvas = document.getElementById('analytic-chart');
+                if (!canvas) {
+                    return;
                 }
-                return padding.left + ((x - minX) / (maxX - minX)) * plotW;
-            }
 
-            function yScale(y) {
-                return padding.top + (1 - ((y - minY) / (maxY - minY))) * plotH;
-            }
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                    return;
+                }
 
-            ctx.strokeStyle = 'rgba(148, 163, 184, 0.7)';
-            ctx.fillStyle = '#64748b';
-            ctx.font = '11px Arial';
+                const w = canvas.width;
+                const h = canvas.height;
 
-            const gridLines = 4;
-            for (let i = 0; i <= gridLines; i++) {
-                const gy = padding.top + (i / gridLines) * plotH;
+                ctx.clearRect(0, 0, w, h);
+
+                const padding = { left: 46, right: 54, top: 18, bottom: 34 };
+                const plotW = w - padding.left - padding.right;
+                const plotH = h - padding.top - padding.bottom;
+
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, w, h);
+
+                ctx.strokeStyle = 'rgba(226, 232, 240, 1)';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(padding.left, padding.top, plotW, plotH);
+
+                if (!series || series.length === 0) {
+                    ctx.fillStyle = '#64748b';
+                    ctx.font = '12px Arial';
+                    ctx.fillText('Not enough data yet', padding.left + 10, padding.top + 22);
+                    return;
+                }
+
+                const xs = series.map(p => {
+                    const mins = p.minutes_since_start;
+                    if (mins === null || mins === undefined || Number.isNaN(Number(mins))) {
+                        return Number(p.iteration || 0);
+                    }
+                    return Number(mins);
+                });
+
+                const ys = series.map(p => Number(p.forecast_views || 0));
+                const ss = series.map(p => Number(p.sentiment || 0));
+
+                const minX = Math.min(...xs);
+                const maxX = Math.max(...xs);
+                const minY = 0;
+                const maxY = Math.max(...ys, 1);
+
+                const minS = 0;
+                const maxS = 100;
+
+                function xScale(x) {
+                    if (maxX === minX) {
+                        return padding.left;
+                    }
+                    return padding.left + ((x - minX) / (maxX - minX)) * plotW;
+                }
+
+                function yScale(y) {
+                    return padding.top + (1 - ((y - minY) / (maxY - minY))) * plotH;
+                }
+
+                function sScale(s) {
+                    return padding.top + (1 - ((s - minS) / (maxS - minS))) * plotH;
+                }
+
+                ctx.strokeStyle = 'rgba(148, 163, 184, 0.7)';
+                ctx.fillStyle = '#64748b';
+                ctx.font = '11px Arial';
+
+                const gridLines = 4;
+                for (let i = 0; i <= gridLines; i++) {
+                    const gy = padding.top + (i / gridLines) * plotH;
+                    ctx.beginPath();
+                    ctx.moveTo(padding.left, gy);
+                    ctx.lineTo(padding.left + plotW, gy);
+                    ctx.stroke();
+
+                    const value = Math.round(maxY * (1 - i / gridLines));
+                    ctx.fillText(value.toLocaleString(), 6, gy + 4);
+                }
+
+                for (let i = 0; i <= gridLines; i++) {
+                    const gy = padding.top + (i / gridLines) * plotH;
+                    const sValue = Math.round(maxS * (1 - i / gridLines));
+                    const text = `${sValue}%`;
+                    const textWidth = ctx.measureText(text).width;
+                    ctx.fillText(text, padding.left + plotW + (padding.right - textWidth) - 6, gy + 4);
+                }
+
+                ctx.strokeStyle = 'rgba(226, 232, 240, 1)';
                 ctx.beginPath();
-                ctx.moveTo(padding.left, gy);
-                ctx.lineTo(padding.left + plotW, gy);
+                ctx.moveTo(padding.left + plotW, padding.top);
+                ctx.lineTo(padding.left + plotW, padding.top + plotH);
                 ctx.stroke();
 
-                const value = Math.round(maxY * (1 - i / gridLines));
-                ctx.fillText(value.toLocaleString(), 6, gy + 4);
-            }
+                const xVals = xs;
+                const viewsVals = ys;
+                const sentVals = ss;
 
-            ctx.strokeStyle = '#1da1f2';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            series.forEach((p, idx) => {
-                const x = xScale(Number(p.iteration || 0));
-                const y = yScale(Number(p.forecast_views || 0));
-                if (idx === 0) {
-                    ctx.moveTo(x, y);
+                ctx.fillStyle = '#64748b';
+                ctx.font = '10px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'top';
+                series.forEach((p, idx) => {
+                    const x = xScale(Number(xVals[idx] || 0));
+                    const mins = p?.minutes_since_start;
+                    const label = (mins !== null && mins !== undefined && !Number.isNaN(Number(mins)))
+                        ? `${Number(mins).toFixed(1)}m`
+                        : String(p?.iteration ?? '');
+
+                    const clampedX = Math.max(padding.left, Math.min(padding.left + plotW, x));
+                    ctx.fillText(label, clampedX, padding.top + plotH + 8);
+                });
+
+                ctx.lineWidth = 2;
+
+                ctx.strokeStyle = '#1da1f2';
+                if (series.length === 1) {
+                    const singleY = yScale(Number(viewsVals[0] || 0));
+                    ctx.beginPath();
+                    ctx.moveTo(padding.left, singleY);
+                    ctx.lineTo(padding.left + plotW, singleY);
+                    ctx.stroke();
                 } else {
-                    ctx.lineTo(x, y);
+                    ctx.beginPath();
+                    series.forEach((p, idx) => {
+                        const x = xScale(Number(xVals[idx] || 0));
+                        const y = yScale(Number(viewsVals[idx] || 0));
+                        if (idx === 0) {
+                            ctx.moveTo(x, y);
+                        } else {
+                            ctx.lineTo(x, y);
+                        }
+                    });
+                    ctx.stroke();
                 }
-            });
-            ctx.stroke();
 
-            ctx.fillStyle = '#1da1f2';
-            series.forEach(p => {
-                const x = xScale(Number(p.iteration || 0));
-                const y = yScale(Number(p.forecast_views || 0));
-                ctx.beginPath();
-                ctx.arc(x, y, 3, 0, Math.PI * 2);
-                ctx.fill();
-            });
+                ctx.fillStyle = '#1da1f2';
+                series.forEach((p, idx) => {
+                    const x = xScale(Number(xVals[idx] || 0));
+                    const y = yScale(Number(viewsVals[idx] || 0));
+                    ctx.beginPath();
+                    ctx.arc(x, y, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                });
 
-            ctx.fillStyle = '#64748b';
-            ctx.font = '11px Arial';
-            const last = series[series.length - 1];
-            ctx.fillText(`Iteration ${last.iteration}`, padding.left, h - 12);
+                ctx.strokeStyle = '#ef4444';
+                if (series.length === 1) {
+                    const singleSY = sScale(Number(sentVals[0] || 0));
+                    ctx.beginPath();
+                    ctx.moveTo(padding.left, singleSY);
+                    ctx.lineTo(padding.left + plotW, singleSY);
+                    ctx.stroke();
+                } else {
+                    ctx.beginPath();
+                    series.forEach((p, idx) => {
+                        const x = xScale(Number(xVals[idx] || 0));
+                        const y = sScale(Number(sentVals[idx] || 0));
+                        if (idx === 0) {
+                            ctx.moveTo(x, y);
+                        } else {
+                            ctx.lineTo(x, y);
+                        }
+                    });
+                    ctx.stroke();
+                }
+
+                ctx.fillStyle = '#ef4444';
+                series.forEach((p, idx) => {
+                    const x = xScale(Number(xVals[idx] || 0));
+                    const y = sScale(Number(sentVals[idx] || 0));
+                    ctx.beginPath();
+                    ctx.arc(x, y, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'alphabetic';
+            } catch (e) {
+                console.error('drawAnalyticsChart error', e);
+            }
         }
 
         document.addEventListener('dblclick', function(e) {

@@ -1,4 +1,6 @@
 import json
+import random
+import re
 from datetime import datetime
 
 from django.core.management.base import BaseCommand
@@ -41,10 +43,22 @@ class Command(BaseCommand):
         if not isinstance(data, list):
             raise TypeError(f"Expected top-level JSON array, got {type(data)}")
 
+        random.shuffle(data)
+
         created_total = 0
         processed_total = 0
 
         batch: list[TweetPost] = []
+
+        _BLOCK_CHARS_RE = re.compile(r"[\u2580-\u259F\u25A0-\u25FF]+");
+
+        def _sanitize_user_field(v: str, *, default: str) -> str:
+            raw = (v or "").strip()
+            if not raw:
+                return default
+            sanitized = _BLOCK_CHARS_RE.sub("", raw)
+            sanitized = " ".join(sanitized.split())
+            return sanitized or default
 
         def _parse_created_at(v):
             if v in (None, ""):
@@ -91,8 +105,8 @@ class Command(BaseCommand):
 
             obj = TweetPost(
                 tweet_id=tweet_id,
-                username=(item.get("username") or "Unknown"),
-                screen_name=(item.get("screen_name") or "unknown"),
+                username=_sanitize_user_field(item.get("username"), default="Unknown"),
+                screen_name=_sanitize_user_field(item.get("screen_name"), default="unknown"),
                 content=(item.get("content") or ""),
                 created_at=created_at,
                 retweet_count=int(item.get("retweet_count") or 0),
