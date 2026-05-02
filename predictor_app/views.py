@@ -633,6 +633,7 @@ def get_trend_analytics(request):
             "iteration": it,
             "forecast_views": int(stat.get("total_views", 0) or 0),
             "sentiment": float(stat.get("sentiment", 0) or 0),
+            "engagement": int(stat.get("engagement_count", 0) or 0),
             "minutes_since_start": minutes_since_start,
         })
 
