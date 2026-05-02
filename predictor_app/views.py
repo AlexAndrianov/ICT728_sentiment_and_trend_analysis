@@ -26,6 +26,8 @@ _LAST_PROCESSED_TWEET_ID = 0
 _TRENDS_ITERATION_LOCK = threading.Lock()
 _TRENDS_ITERATION_INDEX = 0
 
+g_iteration_timestamps: dict[int, float] = {}
+
 # Global dictionary for caching sentiment and forecast results
 # Dictionary<TweetId, {sentiment: {score, label}, forecast_views: int}>
 gTwitsAnalysisData: dict[int, dict] = {}
@@ -307,12 +309,13 @@ def landing(request):
 def trends(request):
     """Trends dashboard page"""
     # Reset the iteration counter when page is loaded fresh
-    global _LAST_PROCESSED_TWEET_ID, _TRENDS_ITERATION_INDEX, g_hashtag_stats, g_clusters_stats
+    global _LAST_PROCESSED_TWEET_ID, _TRENDS_ITERATION_INDEX, g_hashtag_stats, g_clusters_stats, g_iteration_timestamps
     with _TRENDS_ITERATION_LOCK:
         _LAST_PROCESSED_TWEET_ID = 0
         _TRENDS_ITERATION_INDEX = 0
         g_hashtag_stats = {}
         g_clusters_stats = {}
+        g_iteration_timestamps = {}
     
     # Return empty context - data will be loaded via async iteration
     context = {
@@ -365,23 +368,32 @@ def define_clusters_for_tweets(tweets: list[TweetPost]) -> dict[int, str]:
 @require_http_methods(["GET"])
 def get_trends_iteration(request):
     """Get next batch of tweets for trends calculation (50 posts per batch)"""
-    global _LAST_PROCESSED_TWEET_ID, _TRENDS_ITERATION_INDEX, g_hashtag_stats
+    global _LAST_PROCESSED_TWEET_ID, _TRENDS_ITERATION_INDEX, g_hashtag_stats, g_iteration_timestamps
     
     try:
         with _TRENDS_ITERATION_LOCK:
+            # Iterate from newest posts to oldest.
+            # _LAST_PROCESSED_TWEET_ID acts as an exclusive upper bound (id__lt).
+            if _LAST_PROCESSED_TWEET_ID == 0:
+                newest_id = TweetPost.objects.order_by('-id').values_list('id', flat=True).first() or 0
+                _LAST_PROCESSED_TWEET_ID = newest_id + 1
+
             # Get next batch of 50 tweets (or less if fewer remain)
-            tweets = list(TweetPost.objects.filter(id__gt=_LAST_PROCESSED_TWEET_ID).order_by('id')[:50])
+            tweets = list(TweetPost.objects.filter(id__lt=_LAST_PROCESSED_TWEET_ID).order_by('-id')[:200])
             
             if not tweets:
                 # No more tweets to process
                 return JsonResponse({'tweets_data': [], 'has_more': False})
             
-            # Update last processed ID
+            # Update cursor: tweets are sorted by id DESC, so the last item is the oldest in this batch.
             last_tweet = tweets[-1]
             _LAST_PROCESSED_TWEET_ID = last_tweet.id
             _TRENDS_ITERATION_INDEX += 1
             current_iteration = _TRENDS_ITERATION_INDEX
             previous_iteration = current_iteration - 1
+
+            if current_iteration not in g_iteration_timestamps:
+                g_iteration_timestamps[current_iteration] = time.time()
             tweet_to_cluster = define_clusters_for_tweets(tweets)
             
             # Convert to JSON-safe format
@@ -466,6 +478,111 @@ def get_trends_iteration(request):
     except Exception as e:
         logger.exception("get_trends_iteration error")
         return JsonResponse({'error': str(e), 'tweets_data': [], 'has_more': False}, status=500)
+
+
+def _get_trend_stats_map(trend_type: int) -> dict[int, dict[str, dict]]:
+    if int(trend_type or 0) == 0:
+        return g_hashtag_stats
+    return g_clusters_stats
+
+
+def _find_matching_trend_key(stats_for_iteration: dict[str, dict], trend_name: str) -> str | None:
+    if not stats_for_iteration:
+        return None
+
+    raw = (trend_name or "").strip()
+    if not raw:
+        return None
+
+    if raw in stats_for_iteration:
+        return raw
+
+    lowered = raw.lower()
+    for key in stats_for_iteration.keys():
+        if (key or "").strip().lower() == lowered:
+            return key
+
+    return None
+
+
+@require_http_methods(["GET"])
+def get_trend_analytics(request):
+    trend_name = (request.GET.get("name") or "").strip()
+    trend_type_raw = (request.GET.get("type") or "0").strip()
+
+    try:
+        trend_type = int(trend_type_raw)
+    except ValueError:
+        trend_type = 0
+
+    if not trend_name:
+        return JsonResponse({"error": "Missing 'name'"}, status=400)
+
+    stats_map = _get_trend_stats_map(trend_type)
+    iterations = sorted(stats_map.keys())
+    if not iterations:
+        return JsonResponse({
+            "name": trend_name,
+            "type": trend_type,
+            "series": [],
+            "latest": None,
+        })
+
+    latest_iteration = iterations[-1]
+    latest_iteration_stats = stats_map.get(latest_iteration, {})
+    matching_key = _find_matching_trend_key(latest_iteration_stats, trend_name)
+    if matching_key is None:
+        for it in reversed(iterations):
+            matching_key = _find_matching_trend_key(stats_map.get(it, {}), trend_name)
+            if matching_key is not None:
+                break
+
+    if matching_key is None:
+        return JsonResponse({
+            "name": trend_name,
+            "type": trend_type,
+            "series": [],
+            "latest": None,
+        })
+
+    series = []
+    start_ts = None
+    if g_iteration_timestamps:
+        start_ts = min(g_iteration_timestamps.values())
+    for it in iterations:
+        it_stats = stats_map.get(it, {})
+        key_for_iteration = _find_matching_trend_key(it_stats, matching_key) or _find_matching_trend_key(it_stats, trend_name)
+        if key_for_iteration is None:
+            continue
+        stat = it_stats.get(key_for_iteration) or {}
+
+        ts = g_iteration_timestamps.get(it)
+        minutes_since_start = None
+        if ts is not None and start_ts is not None:
+            minutes_since_start = round((float(ts) - float(start_ts)) / 60.0, 2)
+        series.append({
+            "iteration": it,
+            "forecast_views": int(stat.get("total_views", 0) or 0),
+            "sentiment": float(stat.get("sentiment", 0) or 0),
+            "minutes_since_start": minutes_since_start,
+        })
+
+    latest_stat = (latest_iteration_stats.get(matching_key) or {})
+
+    return JsonResponse({
+        "name": matching_key,
+        "type": trend_type,
+        "latest_iteration": latest_iteration,
+        "latest": {
+            "engagement_count": int(latest_stat.get("engagement_count", 0) or 0),
+            "sentiment": float(latest_stat.get("sentiment", 0) or 0),
+            "total_views": int(latest_stat.get("total_views", 0) or 0),
+            "total_views_diff": float(latest_stat.get("total_views_diff", 0) or 0),
+            "sentiment_diff": float(latest_stat.get("sentiment_diff", 0) or 0),
+            "engagement_diff": int(latest_stat.get("engagement_diff", 0) or 0),
+        },
+        "series": series,
+    })
 
 
 def index(request):
