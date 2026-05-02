@@ -1452,7 +1452,7 @@
 
                 ctx.clearRect(0, 0, w, h);
 
-                const padding = { left: 46, right: 54, top: 18, bottom: 34 };
+                const padding = { left: 70, right: 80, top: 18, bottom: 60 };
                 const plotW = w - padding.left - padding.right;
                 const plotH = h - padding.top - padding.bottom;
 
@@ -1470,14 +1470,7 @@
                     return;
                 }
 
-                // Filter engagement - only show every 3rd point to reduce noise
-                const engagementInterval = 3;
-                const filteredSeries = series.map((p, idx) => ({
-                    ...p,
-                    _showEngagement: idx % engagementInterval === 0 || idx === series.length - 1
-                }));
-
-                const xs = filteredSeries.map(p => {
+                const xs = series.map(p => {
                     const mins = p.minutes_since_start;
                     if (mins === null || mins === undefined || Number.isNaN(Number(mins))) {
                         return Number(p.iteration || 0);
@@ -1485,9 +1478,9 @@
                     return Number(mins);
                 });
 
-                const ys = filteredSeries.map(p => Number(p.forecast_views || 0));
-                const ss = filteredSeries.map(p => Number(p.sentiment || 0));
-                const es = filteredSeries.map(p => Number(p.engagement || 0));
+                const ys = series.map(p => Number(p.forecast_views || 0));
+                const ss = series.map(p => Number(p.sentiment || 0));
+                const es = series.map(p => Number(p.engagement || 0));
 
                 const minX = Math.min(...xs);
                 const maxX = Math.max(...xs);
@@ -1516,9 +1509,6 @@
                 }
 
                 ctx.strokeStyle = 'rgba(148, 163, 184, 0.7)';
-                ctx.fillStyle = '#64748b';
-                ctx.font = 'bold 13px Arial';
-
                 const gridLines = 4;
                 for (let i = 0; i <= gridLines; i++) {
                     const gy = padding.top + (i / gridLines) * plotH;
@@ -1526,27 +1516,35 @@
                     ctx.moveTo(padding.left, gy);
                     ctx.lineTo(padding.left + plotW, gy);
                     ctx.stroke();
-
-                    const value = maxY * (1 - i / gridLines);
-                    ctx.fillText(formatCompactNumber(value), 6, gy + 4);
                 }
 
+                // Left scale - Forecast views (blue)
+                ctx.fillStyle = '#1da1f2';
+                ctx.font = 'bold 13px Arial';
+                for (let i = 0; i <= gridLines; i++) {
+                    const gy = padding.top + (i / gridLines) * plotH;
+                    const value = maxY * (1 - i / gridLines);
+                    ctx.fillText(formatCompactNumber(value), 8, gy + 4);
+                }
+
+                // Right scale - Sentiment (red)
+                ctx.fillStyle = '#ef4444';
                 for (let i = 0; i <= gridLines; i++) {
                     const gy = padding.top + (i / gridLines) * plotH;
                     const sValue = Math.round(maxS * (1 - i / gridLines));
                     const text = `${sValue}%`;
                     const textWidth = ctx.measureText(text).width;
-                    ctx.fillText(text, padding.left + plotW + (padding.right - textWidth) - 28, gy + 4);
+                    ctx.fillText(text, padding.left + plotW + 10, gy + 4);
                 }
 
-                // Engagement scale on the far right (green)
+                // Far right scale - Engagement (green)
                 ctx.fillStyle = '#22c55e';
                 for (let i = 0; i <= gridLines; i++) {
                     const gy = padding.top + (i / gridLines) * plotH;
                     const eValue = Math.round(maxE * (1 - i / gridLines));
                     const text = String(eValue);
                     const textWidth = ctx.measureText(text).width;
-                    ctx.fillText(text, padding.left + plotW + (padding.right - textWidth) - 6, gy + 4);
+                    ctx.fillText(text, padding.left + plotW + 44, gy + 4);
                 }
 
                 ctx.strokeStyle = 'rgba(226, 232, 240, 1)';
@@ -1560,27 +1558,6 @@
                 const sentVals = ss;
                 const engVals = es;
 
-                // Legend
-                ctx.font = 'bold 11px Arial';
-                ctx.textAlign = 'left';
-                ctx.textBaseline = 'top';
-                const legendY = 6;
-                const legendX = padding.left + plotW - 120;
-                
-                // Blue - Forecast views
-                ctx.fillStyle = '#1da1f2';
-                ctx.fillRect(legendX, legendY, 10, 3);
-                ctx.fillText('Views', legendX + 14, legendY - 2);
-                
-                // Red - Sentiment
-                ctx.fillStyle = '#ef4444';
-                ctx.fillRect(legendX + 45, legendY, 10, 3);
-                ctx.fillText('Sentiment', legendX + 59, legendY - 2);
-                
-                // Green - Engagement
-                ctx.fillStyle = '#22c55e';
-                ctx.fillRect(legendX + 105, legendY, 10, 3);
-                ctx.fillText('Engagement', legendX + 119, legendY - 2);
 
                 ctx.fillStyle = '#64748b';
                 ctx.font = 'bold 12px Arial';
@@ -1659,40 +1636,82 @@
                     ctx.fill();
                 });
 
-                // Engagement line (green) - only draw points marked for display
                 function eScale(e) {
                     return padding.top + (1 - ((e - minE) / (maxE - minE || 1))) * plotH;
                 }
 
+                // Engagement line (green)
                 ctx.strokeStyle = '#22c55e';
                 ctx.lineWidth = 2;
-                const engPoints = filteredSeries.map((p, idx) => ({ x: xScale(Number(xVals[idx] || 0)), y: eScale(Number(engVals[idx] || 0)), show: p._showEngagement })).filter(p => p.show);
-                
-                if (engPoints.length === 1) {
-                    const singleEY = engPoints[0].y;
+                if (series.length === 1) {
+                    const singleEY = eScale(Number(engVals[0] || 0));
                     ctx.beginPath();
                     ctx.moveTo(padding.left, singleEY);
                     ctx.lineTo(padding.left + plotW, singleEY);
                     ctx.stroke();
-                } else if (engPoints.length > 1) {
+                } else {
                     ctx.beginPath();
-                    engPoints.forEach((p, idx) => {
+                    series.forEach((p, idx) => {
+                        const x = xScale(Number(xVals[idx] || 0));
+                        const y = eScale(Number(engVals[idx] || 0));
                         if (idx === 0) {
-                            ctx.moveTo(p.x, p.y);
+                            ctx.moveTo(x, y);
                         } else {
-                            ctx.lineTo(p.x, p.y);
+                            ctx.lineTo(x, y);
                         }
                     });
                     ctx.stroke();
                 }
 
-                // Engagement points
+                // Engagement points (all)
                 ctx.fillStyle = '#22c55e';
-                engPoints.forEach(p => {
+                series.forEach((p, idx) => {
+                    const x = xScale(Number(xVals[idx] || 0));
+                    const y = eScale(Number(engVals[idx] || 0));
                     ctx.beginPath();
-                    ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+                    ctx.arc(x, y, 3, 0, Math.PI * 2);
                     ctx.fill();
                 });
+
+                // Bottom legend
+                ctx.font = '12px Arial';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'top';
+                const legendY = padding.top + plotH + 38;
+                const lineLength = 24;
+                const gap = 8;
+                
+                let currentX = padding.left;
+                
+                // Forecast views - blue line
+                ctx.strokeStyle = '#1da1f2';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(currentX, legendY + 6);
+                ctx.lineTo(currentX + lineLength, legendY + 6);
+                ctx.stroke();
+                ctx.fillStyle = '#1da1f2';
+                ctx.fillText('Forecast views', currentX + lineLength + gap, legendY);
+                currentX += lineLength + gap + 90;
+                
+                // Sentiment - red line
+                ctx.strokeStyle = '#ef4444';
+                ctx.beginPath();
+                ctx.moveTo(currentX, legendY + 6);
+                ctx.lineTo(currentX + lineLength, legendY + 6);
+                ctx.stroke();
+                ctx.fillStyle = '#ef4444';
+                ctx.fillText('Sentiment', currentX + lineLength + gap, legendY);
+                currentX += lineLength + gap + 70;
+                
+                // Engagement - green line
+                ctx.strokeStyle = '#22c55e';
+                ctx.beginPath();
+                ctx.moveTo(currentX, legendY + 6);
+                ctx.lineTo(currentX + lineLength, legendY + 6);
+                ctx.stroke();
+                ctx.fillStyle = '#22c55e';
+                ctx.fillText('Engagement', currentX + lineLength + gap, legendY);
 
                 ctx.textAlign = 'left';
                 ctx.textBaseline = 'alphabetic';
