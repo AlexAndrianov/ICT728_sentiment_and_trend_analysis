@@ -256,39 +256,6 @@
 
 
 
-      .trends-cloud-button {
-        position: fixed;
-        bottom: 2rem;
-        right: 35rem;
-        background: linear-gradient(135deg, #4299e1, #9f7aea);
-        color: white;
-        border: none;
-        padding: 1rem 2rem;
-        border-radius: 50px;
-        font-size: 1.1rem;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        box-shadow: 0 8px 32px rgba(66, 153, 225, 0.3);
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        text-decoration: none;
-        animation: slideInRight 1s ease-out 1s both;
-        z-index: 1000;
-        min-width: 180px;
-        justify-content: center;
-      }
-
-      .trends-cloud-button:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 12px 40px rgba(66, 153, 225, 0.4);
-      }
-
-      .trends-cloud-button:active {
-        transform: translateY(-1px);
-      }
-
       .dashboard-button:hover {
         transform: translateY(-3px);
         box-shadow: 0 12px 40px rgba(66, 153, 225, 0.4);
@@ -387,15 +354,6 @@
         }
 
 
-
-        .trends-cloud-button {
-          bottom: 1rem;
-          right: 25rem;
-          padding: 0.8rem 1.5rem;
-          font-size: 1rem;
-          min-width: 160px;
-          justify-content: center;
-        }
 
         .user-session-info {
           top: 14px;
@@ -515,11 +473,6 @@
       <span class="arrow-icon">→</span>
     </button>
 
-    <button class="trends-cloud-button">
-      To Trends Cloud
-      <span class="arrow-icon">→</span>
-    </button>
-
     <button class="trends-button" onclick="navigateToTrends()">
       To Trends
       <span class="arrow-icon">→</span>
@@ -569,6 +522,7 @@
           window.location.href = "{% url 'trends' %}";
         }, 800);
       }
+
     </script>
   </body>
 </html>

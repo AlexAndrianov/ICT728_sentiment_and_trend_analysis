@@ -1,4 +1,5 @@
 from django.urls import path
+from django.views.generic import TemplateView
 
 from . import views
 
@@ -7,6 +8,8 @@ urlpatterns = [
     path("selector/", views.landing, name="landing"),
     path("dashboard/", views.index, name="index"),
     path("trends/", views.trends, name="trends"),
+    path("trends-cloud/", TemplateView.as_view(template_name="predictor_app/trends_cloud.html"), name="trends_cloud"),
+    path("trend-cloud-data/", views.get_trends_cloud_data, name="get_trends_cloud_data"),
     path("tweets/", views.tweet_list, name="tweet_list"),
     path("save-to-dashboard/", views.save_to_dashboard, name="save_to_dashboard"),
     path("remove-from-dashboard/", views.remove_from_dashboard, name="remove_from_dashboard"),

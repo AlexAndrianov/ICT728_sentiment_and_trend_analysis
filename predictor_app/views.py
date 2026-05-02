@@ -25,6 +25,7 @@ _SENTIMENT_FUTURES: dict[tuple[int, int], Future] = {}
 _LAST_PROCESSED_TWEET_ID = 0
 _TRENDS_ITERATION_LOCK = threading.Lock()
 _TRENDS_ITERATION_INDEX = 0
+_TRENDS_PAGE_VISITED = False  # Tracks if trends page was visited since app start
 
 g_iteration_timestamps: dict[int, float] = {}
 
@@ -164,6 +165,7 @@ def calculate_hashtag_stat(
         hashtag_stat['title']: hashtag_stat.copy()
         for hashtag_stat in hashtag_stats
     }
+    logger.info(f"calculate_hashtag_stat: saved iteration {current_iteration} with {len(hashtag_stats)} hashtags to g_hashtag_stats")
 
     return hashtag_stats
 
@@ -308,22 +310,65 @@ def landing(request):
 
 def trends(request):
     """Trends dashboard page"""
-    # Reset the iteration counter when page is loaded fresh
-    global _LAST_PROCESSED_TWEET_ID, _TRENDS_ITERATION_INDEX, g_hashtag_stats, g_clusters_stats, g_iteration_timestamps
-    with _TRENDS_ITERATION_LOCK:
-        _LAST_PROCESSED_TWEET_ID = 0
-        _TRENDS_ITERATION_INDEX = 0
-        g_hashtag_stats = {}
-        g_clusters_stats = {}
-        g_iteration_timestamps = {}
+    global _LAST_PROCESSED_TWEET_ID, _TRENDS_ITERATION_INDEX, _TRENDS_PAGE_VISITED
+    global g_hashtag_stats, g_clusters_stats, g_iteration_timestamps
     
-    # Return empty context - data will be loaded via async iteration
+    with _TRENDS_ITERATION_LOCK:
+        if not _TRENDS_PAGE_VISITED:
+            # First visit after app start - reset everything
+            _LAST_PROCESSED_TWEET_ID = 0
+            _TRENDS_ITERATION_INDEX = 0
+            g_hashtag_stats = {}
+            g_clusters_stats = {}
+            g_iteration_timestamps = {}
+            _TRENDS_PAGE_VISITED = True
+            logger.info("First trends visit after app start - reset to zero")
+            hashtag_stats_for_js = []
+            cluster_stats_for_js = []
+        else:
+            # Returning to page - continue from existing data
+            logger.info(f"Returning to trends - continuing iteration {_TRENDS_ITERATION_INDEX}")
+            latest_iter = _TRENDS_ITERATION_INDEX
+            hashtag_stats_for_js = list(g_hashtag_stats.get(latest_iter, {}).values()) if latest_iter > 0 else []
+            cluster_stats_for_js = list(g_clusters_stats.get(latest_iter, {}).values()) if latest_iter > 0 else []
+    
     context = {
         'tweets_json': json.dumps([]),
-        'hashtag_stats_json': json.dumps([]),
+        'hashtag_stats_json': json.dumps(hashtag_stats_for_js),
+        'cluster_stats_json': json.dumps(cluster_stats_for_js),
     }
     
     return render(request, 'predictor_app/trends.html', context)
+
+
+@require_http_methods(["GET"])
+def get_trends_cloud_data(request):
+    """Return latest hashtag stats for cloud visualization (no iteration, just read existing data)."""
+    global g_hashtag_stats
+    
+    with _TRENDS_ITERATION_LOCK:
+        iterations = sorted(g_hashtag_stats.keys())
+        logger.info(f"get_trends_cloud_data: iterations={iterations}, g_hashtag_stats keys={list(g_hashtag_stats.keys())}")
+        
+        if not iterations:
+            logger.warning("get_trends_cloud_data: no iterations found")
+            return JsonResponse({"items": [], "latest_iteration": None})
+        
+        latest_iteration = iterations[-1]
+        stats = g_hashtag_stats.get(latest_iteration, {})
+        logger.info(f"get_trends_cloud_data: latest_iteration={latest_iteration}, stats count={len(stats)}")
+        
+        items = []
+        for title, stat in stats.items():
+            items.append({
+                "title": title,
+                "total_views": int((stat or {}).get("total_views", 0) or 0),
+            })
+        
+        items.sort(key=lambda x: x.get("total_views", 0), reverse=True)
+        logger.info(f"get_trends_cloud_data: returning {len(items)} items")
+        return JsonResponse({"items": items, "latest_iteration": latest_iteration})
+
 
 def define_clusters_for_tweets(tweets: list[TweetPost]) -> dict[int, str]:
     """Define clusters for a list of tweets and return mapping of tweet_id to cluster label."""

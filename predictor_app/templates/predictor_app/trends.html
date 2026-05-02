@@ -452,6 +452,33 @@
             text-decoration: none;
         }
 
+        .cloud-button {
+            background: linear-gradient(135deg, #3b82f6, #22c55e);
+            color: white;
+            border: none;
+            padding: 0.6rem 1.2rem;
+            border-radius: 50px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 16px rgba(59, 130, 246, 0.25);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            text-decoration: none;
+            margin-left: 10px;
+        }
+
+        .cloud-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(59, 130, 246, 0.35);
+        }
+
+        .cloud-button.hidden {
+            display: none;
+        }
+
         .back-button:hover {
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(236, 72, 153, 0.4);
@@ -491,6 +518,11 @@
                 <span class="arrow-back">←</span>
                 Back to Selector
             </button>
+
+            <button id="cloudButton" class="cloud-button hidden" onclick="navigateToCloud()">
+                To Trends Cloud
+                <span class="arrow-back">→</span>
+            </button>
         </div>
     </div>
 
@@ -520,11 +552,11 @@
     </div>
 
     <script>
-        // Dynamic hashtags from backend - will be populated by async iteration
-        const viralHashtags = [];
+        // Dynamic hashtags from backend - initialize with existing data if returning to page
+        const viralHashtags = {{ hashtag_stats_json|safe }};
         let previousHashtagStatsByTitle = {};
 
-        const viralClusterTrends = [];
+        const viralClusterTrends = {{ cluster_stats_json|safe }};
         let previousClusterStatsByTitle = {};
 
         // Global arrays to store accumulated data from async iteration
@@ -580,6 +612,21 @@
 
                 refreshAnalyticsIfOpen();
                 
+                // Show cloud button after first successful iteration with data
+                const cloudButton = document.getElementById('cloudButton');
+                if (cloudButton && viralHashtags.length > 0) {
+                    cloudButton.classList.remove('hidden');
+                }
+                
+                // Save iteration state to localStorage for recovery
+                localStorage.setItem('trendsIterationData', JSON.stringify({
+                    timestamp: Date.now(),
+                    hashtagStats: data.hashtag_stats || [],
+                    clusterStats: data.trends_stats || [],
+                    tweetsData: data.tweets_data || [],
+                    iterationRunning: isIterationRunning
+                }));
+                
                 // Hide spinner after successful fetch
                 const spinner = document.getElementById('trends-spinner');
                 if (spinner) {
@@ -612,12 +659,12 @@
             fetchTrendsIteration().then(hasMore => {
                 if (hasMore) {
                     // Continue iteration every 20 seconds
-                    trendsIterationInterval = setInterval(() => {
+                trendsIterationInterval = setInterval(() => {
                         // Show spinner before fetch
-                        const spinner = document.getElementById('trends-spinner');
-                        if (spinner) {
-                            spinner.classList.add('active');
-                        }
+                    const spinner = document.getElementById('trends-spinner');
+                    if (spinner) {
+                        spinner.classList.add('active');
+                    }
                         
                         fetchTrendsIteration().then(hasMore => {
                             if (!hasMore) {
@@ -892,6 +939,29 @@
                     toggle.classList.remove('active');
                 }
             }
+            
+            // Check if backend has existing data (returning to page) or starting fresh
+            const hasBackendData = viralHashtags.length > 0 || viralClusterTrends.length > 0;
+            
+            if (hasBackendData) {
+                // Returning to page with existing data - show it immediately
+                console.log('Returning to trends with', viralHashtags.length, 'hashtags');
+                
+                // Show cloud button
+                const cloudButton = document.getElementById('cloudButton');
+                if (cloudButton) {
+                    cloudButton.classList.remove('hidden');
+                }
+                
+                // Initialize UI with existing data
+                initializeTrends();
+                console.log('Initialized trends with existing data');
+            } else {
+                // Starting fresh - clear localStorage
+                console.log('Starting fresh - clearing localStorage');
+                localStorage.removeItem('trendsIterationData');
+            }
+            
             // Start async trends iteration loop immediately
             startTrendsIteration();
             
@@ -1222,6 +1292,15 @@
             
             setTimeout(() => {
                 window.location.href = "{% url 'landing' %}";
+            }, 800);
+        }
+
+        function navigateToCloud() {
+            document.body.style.transition = "opacity 0.8s ease-in-out";
+            document.body.style.opacity = "0";
+
+            setTimeout(() => {
+                window.location.href = "{% url 'trends_cloud' %}";
             }, 800);
         }
 
