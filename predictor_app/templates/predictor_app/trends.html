@@ -1377,6 +1377,21 @@
             }
         }
 
+        function formatCompactNumber(num) {
+            const n = Number(num || 0);
+            if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(1) + 'B';
+            if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+            if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+            return n.toLocaleString();
+        }
+
+        function getDiffMeta(diff) {
+            const value = Number(diff || 0);
+            if (value > 0) return { className: 'positive', arrow: '▲', value };
+            if (value < 0) return { className: 'negative', arrow: '▼', value };
+            return { className: 'neutral', arrow: '−', value: 0 };
+        }
+
         function renderAnalyticsMetrics(data) {
             const metricsEl = document.getElementById('analytic-metrics');
             if (!metricsEl) {
@@ -1393,10 +1408,30 @@
             const engagement = Number(latest.engagement_count || 0);
             const sentiment = Number(latest.sentiment || 0);
 
+            const viewsDiff = getDiffMeta(latest.total_views_diff);
+            const sentimentDiff = getDiffMeta(latest.sentiment_diff);
+            const engagementDiff = getDiffMeta(latest.engagement_diff);
+
             metricsEl.innerHTML = `
-                <div class="analytic-metric"><div class="label">Forecast views</div><div class="value">${views.toLocaleString()}</div></div>
-                <div class="analytic-metric"><div class="label">Engagement (posts)</div><div class="value">${engagement.toLocaleString()}</div></div>
-                <div class="analytic-metric"><div class="label">Sentiment</div><div class="value">${sentiment.toFixed(1)}%</div></div>
+                <div class="analytic-metrics-headers">
+                    <div class="analytic-header-item">Forecast views</div>
+                    <div class="analytic-header-item">Sentiment</div>
+                    <div class="analytic-header-item">Engagement</div>
+                </div>
+                <div class="analytic-metrics-row">
+                    <div class="analytic-metric">
+                        <div class="value">${formatCompactNumber(views)}</div>
+                        <div class="diff ${viewsDiff.className}">${viewsDiff.arrow} ${viewsDiff.value > 0 ? '+' : ''}${viewsDiff.value.toFixed(1)}%</div>
+                    </div>
+                    <div class="analytic-metric">
+                        <div class="value">${sentiment.toFixed(1)}%</div>
+                        <div class="diff ${sentimentDiff.className}">${sentimentDiff.arrow} ${sentimentDiff.value > 0 ? '+' : ''}${sentimentDiff.value.toFixed(1)}%</div>
+                    </div>
+                    <div class="analytic-metric">
+                        <div class="value">${engagement.toLocaleString()}</div>
+                        <div class="diff ${engagementDiff.className}">${engagementDiff.arrow} ${engagementDiff.value > 0 ? '+' : ''}${engagementDiff.value}</div>
+                    </div>
+                </div>
             `;
         }
 
@@ -1471,7 +1506,7 @@
 
                 ctx.strokeStyle = 'rgba(148, 163, 184, 0.7)';
                 ctx.fillStyle = '#64748b';
-                ctx.font = '11px Arial';
+                ctx.font = 'bold 13px Arial';
 
                 const gridLines = 4;
                 for (let i = 0; i <= gridLines; i++) {
@@ -1481,8 +1516,8 @@
                     ctx.lineTo(padding.left + plotW, gy);
                     ctx.stroke();
 
-                    const value = Math.round(maxY * (1 - i / gridLines));
-                    ctx.fillText(value.toLocaleString(), 6, gy + 4);
+                    const value = maxY * (1 - i / gridLines);
+                    ctx.fillText(formatCompactNumber(value), 6, gy + 4);
                 }
 
                 for (let i = 0; i <= gridLines; i++) {
@@ -1504,7 +1539,7 @@
                 const sentVals = ss;
 
                 ctx.fillStyle = '#64748b';
-                ctx.font = '10px Arial';
+                ctx.font = 'bold 12px Arial';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'top';
                 series.forEach((p, idx) => {

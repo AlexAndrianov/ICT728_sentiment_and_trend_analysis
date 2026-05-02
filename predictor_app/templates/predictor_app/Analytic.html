@@ -80,29 +80,66 @@
     }
 
     .analytic-metrics {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
         padding: 14px 16px;
+    }
+
+    .analytic-metrics-headers {
+        display: flex;
+        gap: 12px;
+        justify-content: space-between;
+    }
+
+    .analytic-header-item {
+        flex: 1;
+        font-size: 14px;
+        font-weight: 600;
+        color: #0f172a;
+        padding: 0 4px;
+    }
+
+    .analytic-metrics-row {
+        display: flex;
+        gap: 12px;
+        justify-content: space-between;
     }
 
     .analytic-metric {
         border: 1px solid rgba(226, 232, 240, 1);
         border-radius: 10px;
-        padding: 10px 12px;
+        padding: 10px 14px;
         background: white;
-    }
-
-    .analytic-metric .label {
-        font-size: 11px;
-        color: #64748b;
-        margin-bottom: 6px;
+        flex: 1;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
     }
 
     .analytic-metric .value {
-        font-size: 16px;
+        font-size: 18px;
         font-weight: 700;
         color: #0f172a;
+    }
+
+    .analytic-metric .diff {
+        font-size: 12px;
+        font-weight: 700;
+    }
+
+    .analytic-metric .diff.positive {
+        color: #22c55e;
+    }
+
+    .analytic-metric .diff.negative {
+        color: #ef4444;
+    }
+
+    .analytic-metric .diff.neutral {
+        color: #64748b;
     }
 
     .analytic-chart-wrap {
