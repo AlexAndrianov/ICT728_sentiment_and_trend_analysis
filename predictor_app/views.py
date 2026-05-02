@@ -27,6 +27,10 @@ _TRENDS_ITERATION_LOCK = threading.Lock()
 _TRENDS_ITERATION_INDEX = 0
 _TRENDS_PAGE_VISITED = False  # Tracks if trends page was visited since app start
 
+# Global variables for shuffled iteration (cycle through all posts, then shuffle and repeat)
+_SHUFFLED_TWEET_IDS: list[int] = []
+_SHUFFLED_INDEX = 0
+
 g_iteration_timestamps: dict[int, float] = {}
 
 # Global dictionary for caching sentiment and forecast results
@@ -414,21 +418,41 @@ def define_clusters_for_tweets(tweets: list[TweetPost]) -> dict[int, str]:
 def get_trends_iteration(request):
     """Get next batch of tweets for trends calculation (50 posts per batch)"""
     global _LAST_PROCESSED_TWEET_ID, _TRENDS_ITERATION_INDEX, g_hashtag_stats, g_iteration_timestamps
+    global _SHUFFLED_TWEET_IDS, _SHUFFLED_INDEX
     
     try:
         with _TRENDS_ITERATION_LOCK:
-            # Iterate from newest posts to oldest.
-            # _LAST_PROCESSED_TWEET_ID acts as an exclusive upper bound (id__lt).
-            if _LAST_PROCESSED_TWEET_ID == 0:
-                newest_id = TweetPost.objects.order_by('-id').values_list('id', flat=True).first() or 0
-                _LAST_PROCESSED_TWEET_ID = newest_id + 1
+            import random
 
-            # Get next batch of 50 tweets (or less if fewer remain)
-            tweets = list(TweetPost.objects.filter(id__lt=_LAST_PROCESSED_TWEET_ID).order_by('-id')[:200])
+            # Initialize shuffled list on first run or when empty
+            if not _SHUFFLED_TWEET_IDS:
+                all_ids = list(TweetPost.objects.values_list('id', flat=True))
+                if not all_ids:
+                    return JsonResponse({'tweets_data': [], 'has_more': False})
+                random.shuffle(all_ids)
+                _SHUFFLED_TWEET_IDS = all_ids
+                _SHUFFLED_INDEX = 0
+                logger.info(f"Initialized shuffled list with {len(all_ids)} tweets")
+
+            # Get next batch from shuffled list
+            batch_size = 200
+            end_index = min(_SHUFFLED_INDEX + batch_size, len(_SHUFFLED_TWEET_IDS))
+            batch_ids = _SHUFFLED_TWEET_IDS[_SHUFFLED_INDEX:end_index]
             
-            if not tweets:
-                # No more tweets to process
-                return JsonResponse({'tweets_data': [], 'has_more': False})
+            if not batch_ids:
+                # All posts processed - reshuffle and continue from beginning
+                random.shuffle(_SHUFFLED_TWEET_IDS)
+                _SHUFFLED_INDEX = 0
+                end_index = min(_SHUFFLED_INDEX + batch_size, len(_SHUFFLED_TWEET_IDS))
+                batch_ids = _SHUFFLED_TWEET_IDS[_SHUFFLED_INDEX:end_index]
+                logger.info("All posts processed - reshuffled and continuing from beginning")
+            
+            # Fetch tweets by IDs (preserve shuffled order)
+            tweets_map = {t.id: t for t in TweetPost.objects.filter(id__in=batch_ids)}
+            tweets = [tweets_map[tid] for tid in batch_ids if tid in tweets_map]
+            
+            # Update position in shuffled list
+            _SHUFFLED_INDEX = end_index
             
             # Update cursor: tweets are sorted by id DESC, so the last item is the oldest in this batch.
             last_tweet = tweets[-1]
