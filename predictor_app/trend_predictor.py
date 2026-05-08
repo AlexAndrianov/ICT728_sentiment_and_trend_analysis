@@ -374,7 +374,7 @@ def define_cluster_name(tweet_to_cluster: dict[int, int], tweets: list[str]) -> 
 def define_similar_cluster(
     cluster_names: dict[int, str],
     previous_cluster_names: Iterable[str],
-    similarity_threshold: float = 0.7,
+    similarity_threshold: float = 0.5,
 ) -> dict[int, str]:
     """Replace new cluster names with semantically similar old names.
 
