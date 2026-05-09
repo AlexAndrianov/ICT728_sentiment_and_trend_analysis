@@ -4,6 +4,14 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 import json
 from .models import TweetPost, SavedPost
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+from reportlab.lib import colors
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+import datetime
 
 import logging
 import time
@@ -960,3 +968,247 @@ def remove_from_dashboard(request):
         
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)})
+
+
+@require_http_methods(["GET"])
+def export_trends_pdf(request):
+    """Export comprehensive trends data to PDF report"""
+    global g_hashtag_stats, g_clusters_stats, g_iteration_timestamps
+    
+    try:
+        # Create PDF response
+        response = HttpResponse(content_type='application/pdf')
+        filename = f'trends_report_{datetime.datetime.now().strftime("%Y-%m-%d")}.pdf'
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        
+        # Create PDF document
+        doc = SimpleDocTemplate(response, pagesize=A4, 
+                              rightMargin=72, leftMargin=72,
+                              topMargin=72, bottomMargin=18)
+        
+        # Get styles
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=24,
+            spaceAfter=30,
+            alignment=1  # Center alignment
+        )
+        heading_style = ParagraphStyle(
+            'CustomHeading',
+            parent=styles['Heading2'],
+            fontSize=16,
+            spaceAfter=12,
+            textColor=colors.darkblue
+        )
+        normal_style = styles['Normal']
+        
+        # Build PDF content
+        story = []
+        
+        # Title
+        story.append(Paragraph("Trends Analysis Report", title_style))
+        story.append(Spacer(1, 12))
+        
+        # Generation info
+        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        story.append(Paragraph(f"Generated on: {current_time}", normal_style))
+        story.append(Spacer(1, 20))
+        
+        with _TRENDS_ITERATION_LOCK:
+            # Get all iterations sorted
+            hashtag_iterations = sorted(g_hashtag_stats.keys())
+            cluster_iterations = sorted(g_clusters_stats.keys())
+            
+            if not hashtag_iterations and not cluster_iterations:
+                story.append(Paragraph("No trends data available.", normal_style))
+            else:
+                # HASHTAGS SECTION
+                if hashtag_iterations:
+                    story.append(Paragraph("HASHTAG TRENDS BY ITERATION", heading_style))
+                    story.append(Spacer(1, 12))
+                    
+                    for iteration in hashtag_iterations:
+                        iteration_data = g_hashtag_stats.get(iteration, {})
+                        timestamp = g_iteration_timestamps.get(iteration)
+                        
+                        # Iteration header
+                        story.append(Paragraph(f"Iteration {iteration}", heading_style))
+                        if timestamp:
+                            time_str = datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+                            story.append(Paragraph(f"Timestamp: {time_str}", normal_style))
+                        
+                        # Create table data
+                        table_data = [["Rank", "Hashtag", "Views", "Posts", "Sentiment", "Views Change", "Sentiment Change"]]
+                        
+                        # Sort hashtags by views
+                        sorted_hashtags = sorted(iteration_data.items(), 
+                                               key=lambda x: x[1].get('total_views', 0), 
+                                               reverse=True)
+                        
+                        for rank, (hashtag, stats) in enumerate(sorted_hashtags, 1):
+                            views = int(stats.get('total_views', 0) or 0)
+                            posts = int(stats.get('engagement_count', 0) or 0)
+                            sentiment = float(stats.get('sentiment', 0) or 0)
+                            views_change = float(stats.get('total_views_diff', 0) or 0)
+                            sentiment_change = float(stats.get('sentiment_diff', 0) or 0)
+                            
+                            table_data.append([
+                                str(rank),
+                                hashtag,
+                                f"{views:,}",
+                                str(posts),
+                                f"{sentiment:.1f}%",
+                                f"{views_change:+.1f}%" if views_change != 0 else "0%",
+                                f"{sentiment_change:+.1f}%" if sentiment_change != 0 else "0%"
+                            ])
+                        
+                        # Create table
+                        table = Table(table_data, colWidths=[0.5*inch, 2*inch, 1*inch, 0.8*inch, 1*inch, 1*inch, 1.2*inch])
+                        table.setStyle(TableStyle([
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                            ('FONTSIZE', (0, 0), (-1, 0), 10),
+                            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                            ('FONTSIZE', (0, 1), (-1, -1), 8),
+                        ]))
+                        
+                        story.append(table)
+                        story.append(Spacer(1, 20))
+                
+                # CLUSTERS SECTION
+                if cluster_iterations:
+                    story.append(PageBreak())
+                    story.append(Paragraph("CLUSTER TRENDS BY ITERATION", heading_style))
+                    story.append(Spacer(1, 12))
+                    
+                    for iteration in cluster_iterations:
+                        iteration_data = g_clusters_stats.get(iteration, {})
+                        timestamp = g_iteration_timestamps.get(iteration)
+                        
+                        # Iteration header
+                        story.append(Paragraph(f"Iteration {iteration}", heading_style))
+                        if timestamp:
+                            time_str = datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+                            story.append(Paragraph(f"Timestamp: {time_str}", normal_style))
+                        
+                        # Create table data
+                        table_data = [["Rank", "Cluster", "Views", "Posts", "Sentiment", "Views Change", "Sentiment Change"]]
+                        
+                        # Sort clusters by views
+                        sorted_clusters = sorted(iteration_data.items(), 
+                                               key=lambda x: x[1].get('total_views', 0), 
+                                               reverse=True)
+                        
+                        for rank, (cluster, stats) in enumerate(sorted_clusters, 1):
+                            views = int(stats.get('total_views', 0) or 0)
+                            posts = int(stats.get('engagement_count', 0) or 0)
+                            sentiment = float(stats.get('sentiment', 0) or 0)
+                            views_change = float(stats.get('total_views_diff', 0) or 0)
+                            sentiment_change = float(stats.get('sentiment_diff', 0) or 0)
+                            
+                            table_data.append([
+                                str(rank),
+                                cluster,
+                                f"{views:,}",
+                                str(posts),
+                                f"{sentiment:.1f}%",
+                                f"{views_change:+.1f}%" if views_change != 0 else "0%",
+                                f"{sentiment_change:+.1f}%" if sentiment_change != 0 else "0%"
+                            ])
+                        
+                        # Create table
+                        table = Table(table_data, colWidths=[0.5*inch, 2*inch, 1*inch, 0.8*inch, 1*inch, 1*inch, 1.2*inch])
+                        table.setStyle(TableStyle([
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                            ('FONTSIZE', (0, 0), (-1, 0), 10),
+                            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                            ('BACKGROUND', (0, 1), (-1, -1), colors.lightblue),
+                            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                            ('FONTSIZE', (0, 1), (-1, -1), 8),
+                        ]))
+                        
+                        story.append(table)
+                        story.append(Spacer(1, 20))
+                
+                # SUMMARY STATISTICS
+                story.append(PageBreak())
+                story.append(Paragraph("SUMMARY STATISTICS", heading_style))
+                story.append(Spacer(1, 12))
+                
+                summary_data = [["Metric", "Hashtags", "Clusters"]]
+                
+                if hashtag_iterations:
+                    total_hashtag_iterations = len(hashtag_iterations)
+                    latest_hashtag_iter = hashtag_iterations[-1]
+                    latest_hashtag_data = g_hashtag_stats.get(latest_hashtag_iter, {})
+                    total_hashtag_trends = len(latest_hashtag_data)
+                    
+                    if latest_hashtag_data:
+                        total_hashtag_views = sum(int(stats.get('total_views', 0) or 0) for stats in latest_hashtag_data.values())
+                        avg_hashtag_sentiment = sum(float(stats.get('sentiment', 0) or 0) for stats in latest_hashtag_data.values()) / len(latest_hashtag_data) if latest_hashtag_data else 0
+                    else:
+                        total_hashtag_views = 0
+                        avg_hashtag_sentiment = 0
+                else:
+                    total_hashtag_iterations = 0
+                    total_hashtag_trends = 0
+                    total_hashtag_views = 0
+                    avg_hashtag_sentiment = 0
+                
+                if cluster_iterations:
+                    total_cluster_iterations = len(cluster_iterations)
+                    latest_cluster_iter = cluster_iterations[-1]
+                    latest_cluster_data = g_clusters_stats.get(latest_cluster_iter, {})
+                    total_cluster_trends = len(latest_cluster_data)
+                    
+                    if latest_cluster_data:
+                        total_cluster_views = sum(int(stats.get('total_views', 0) or 0) for stats in latest_cluster_data.values())
+                        avg_cluster_sentiment = sum(float(stats.get('sentiment', 0) or 0) for stats in latest_cluster_data.values()) / len(latest_cluster_data) if latest_cluster_data else 0
+                    else:
+                        total_cluster_views = 0
+                        avg_cluster_sentiment = 0
+                else:
+                    total_cluster_iterations = 0
+                    total_cluster_trends = 0
+                    total_cluster_views = 0
+                    avg_cluster_sentiment = 0
+                
+                summary_data.extend([
+                    ["Total Iterations", str(total_hashtag_iterations), str(total_cluster_iterations)],
+                    ["Total Trends", str(total_hashtag_trends), str(total_cluster_trends)],
+                    ["Total Views", f"{total_hashtag_views:,}", f"{total_cluster_views:,}"],
+                    ["Average Sentiment", f"{avg_hashtag_sentiment:.1f}%", f"{avg_cluster_sentiment:.1f}%"],
+                ])
+                
+                summary_table = Table(summary_data, colWidths=[2*inch, 1.5*inch, 1.5*inch])
+                summary_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 10),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                    ('BACKGROUND', (0, 1), (-1, -1), colors.lightgrey),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                    ('FONTSIZE', (0, 1), (-1, -1), 9),
+                ]))
+                
+                story.append(summary_table)
+        
+        # Build PDF
+        doc.build(story)
+        
+        return response
+        
+    except Exception as e:
+        logger.exception("export_trends_pdf error")
+        return JsonResponse({'error': str(e)}, status=500)

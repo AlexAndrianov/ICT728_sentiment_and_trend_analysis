@@ -19,4 +19,5 @@ urlpatterns = [
     path("trends-iteration/", views.get_trends_iteration, name="get_trends_iteration"),
     path("trends-latest-state/", views.get_trends_latest_state, name="get_trends_latest_state"),
     path("trend-analytics/", views.get_trend_analytics, name="get_trend_analytics"),
+    path("export-trends-pdf/", views.export_trends_pdf, name="export_trends_pdf"),
 ]

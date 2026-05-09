@@ -18,3 +18,5 @@ language-tool-python>=2.7
 xgboost>=1.7
 
 selenium>=4.0.0
+
+reportlab>=3.6.0
