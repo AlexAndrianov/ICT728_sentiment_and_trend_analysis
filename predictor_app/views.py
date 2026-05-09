@@ -27,6 +27,14 @@ _TRENDS_ITERATION_LOCK = threading.Lock()
 _TRENDS_ITERATION_INDEX = 0
 _TRENDS_PAGE_VISITED = False  # Tracks if trends page was visited since app start
 
+_TRENDS_LAYOUT_LOCK = threading.Lock()
+_TRENDS_LAYOUT_STATE: dict[str, dict[str, str]] = {
+    "hashtag": {},
+    "cluster": {},
+}
+
+g_tweets_data: dict[int, list[dict]] = {}
+
 # Global variables for shuffled iteration (cycle through all posts, then shuffle and repeat)
 _SHUFFLED_TWEET_IDS: list[int] = []
 _SHUFFLED_INDEX = 0
@@ -316,33 +324,61 @@ def trends(request):
     """Trends dashboard page"""
     global _LAST_PROCESSED_TWEET_ID, _TRENDS_ITERATION_INDEX, _TRENDS_PAGE_VISITED
     global g_hashtag_stats, g_clusters_stats, g_iteration_timestamps
+    global _TRENDS_LAYOUT_STATE
     
     with _TRENDS_ITERATION_LOCK:
-        if not _TRENDS_PAGE_VISITED:
-            # First visit after app start - reset everything
-            _LAST_PROCESSED_TWEET_ID = 0
-            _TRENDS_ITERATION_INDEX = 0
-            g_hashtag_stats = {}
-            g_clusters_stats = {}
-            g_iteration_timestamps = {}
-            _TRENDS_PAGE_VISITED = True
-            logger.info("First trends visit after app start - reset to zero")
-            hashtag_stats_for_js = []
-            cluster_stats_for_js = []
-        else:
-            # Returning to page - continue from existing data
-            logger.info(f"Returning to trends - continuing iteration {_TRENDS_ITERATION_INDEX}")
-            latest_iter = _TRENDS_ITERATION_INDEX
-            hashtag_stats_for_js = list(g_hashtag_stats.get(latest_iter, {}).values()) if latest_iter > 0 else []
-            cluster_stats_for_js = list(g_clusters_stats.get(latest_iter, {}).values()) if latest_iter > 0 else []
+        # Returning to page - continue from existing data
+        logger.info(f"Returning to trends - continuing iteration {_TRENDS_ITERATION_INDEX}")
+        latest_iter = _TRENDS_ITERATION_INDEX
+        hashtag_stats_for_js = list(g_hashtag_stats.get(latest_iter, {}).values()) if latest_iter > 0 else []
+        cluster_stats_for_js = list(g_clusters_stats.get(latest_iter, {}).values()) if latest_iter > 0 else []
     
     context = {
         'tweets_json': json.dumps([]),
         'hashtag_stats_json': json.dumps(hashtag_stats_for_js),
         'cluster_stats_json': json.dumps(cluster_stats_for_js),
+        'trend_layout_json': json.dumps(_TRENDS_LAYOUT_STATE),
     }
     
     return render(request, 'predictor_app/trends.html', context)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def save_trends_layout(request):
+    """Persist selected trend cards per column in global memory (server process only)."""
+    global _TRENDS_LAYOUT_STATE
+
+    try:
+        payload = json.loads((request.body or b"{}").decode("utf-8"))
+    except Exception:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    if not isinstance(payload, dict):
+        return JsonResponse({"error": "Invalid payload"}, status=400)
+
+    hashtag_layout = payload.get("hashtag", {})
+    cluster_layout = payload.get("cluster", {})
+
+    if not isinstance(hashtag_layout, dict) or not isinstance(cluster_layout, dict):
+        return JsonResponse({"error": "Layout must be objects"}, status=400)
+
+    def normalize_layout(layout: dict) -> dict[str, str]:
+        normalized: dict[str, str] = {}
+        for key, value in layout.items():
+            col = str(key)
+            title = ("" if value is None else str(value)).strip()
+            if col in {"1", "2", "3", "4", "5"} and title:
+                normalized[col] = title
+        return normalized
+
+    with _TRENDS_LAYOUT_LOCK:
+        _TRENDS_LAYOUT_STATE = {
+            "hashtag": normalize_layout(hashtag_layout),
+            "cluster": normalize_layout(cluster_layout),
+        }
+
+    return JsonResponse({"ok": True})
 
 
 @require_http_methods(["GET"])
@@ -419,6 +455,7 @@ def get_trends_iteration(request):
     """Get next batch of tweets for trends calculation (50 posts per batch)"""
     global _LAST_PROCESSED_TWEET_ID, _TRENDS_ITERATION_INDEX, g_hashtag_stats, g_iteration_timestamps
     global _SHUFFLED_TWEET_IDS, _SHUFFLED_INDEX
+    global g_tweets_data
     
     try:
         with _TRENDS_ITERATION_LOCK:
@@ -536,6 +573,8 @@ def get_trends_iteration(request):
                         cached_data = gTwitsAnalysisData[tweet_data['id']]
                         if 'forecast_views' in cached_data:
                             tweet_data['forecast_views'] = cached_data['forecast_views']
+
+            g_tweets_data[int(current_iteration)] = tweets_data
             
             return JsonResponse({
                 'tweets_data': tweets_data,
@@ -543,10 +582,32 @@ def get_trends_iteration(request):
                 'trends_stats': trends_stats,
                 'has_more': True,
             })
+
+            
             
     except Exception as e:
         logger.exception("get_trends_iteration error")
         return JsonResponse({'error': str(e), 'tweets_data': [], 'has_more': False}, status=500)
+
+
+@require_http_methods(["GET"])
+def get_trends_latest_state(request):
+    """Return latest computed trends iteration snapshot (tweets + stats)."""
+    global _TRENDS_ITERATION_INDEX, g_hashtag_stats, g_clusters_stats
+    global g_tweets_data
+
+    with _TRENDS_ITERATION_LOCK:
+        latest_iter = int(_TRENDS_ITERATION_INDEX)
+        tweets_data = g_tweets_data.get(latest_iter, [])
+        hashtag_stats = list(g_hashtag_stats.get(latest_iter, {}).values()) if latest_iter > 0 else []
+        cluster_stats = list(g_clusters_stats.get(latest_iter, {}).values()) if latest_iter > 0 else []
+
+    return JsonResponse({
+        "iteration": latest_iter,
+        "tweets_data": tweets_data,
+        "hashtag_stats": hashtag_stats,
+        "trends_stats": cluster_stats,
+    })
 
 
 def _get_trend_stats_map(trend_type: int) -> dict[int, dict[str, dict]]:

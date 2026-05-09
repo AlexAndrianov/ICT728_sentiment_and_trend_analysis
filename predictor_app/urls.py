@@ -8,6 +8,7 @@ urlpatterns = [
     path("selector/", views.landing, name="landing"),
     path("dashboard/", views.index, name="index"),
     path("trends/", views.trends, name="trends"),
+    path("save-trends-layout/", views.save_trends_layout, name="save_trends_layout"),
     path("trends-cloud/", TemplateView.as_view(template_name="predictor_app/trends_cloud.html"), name="trends_cloud"),
     path("trend-cloud-data/", views.get_trends_cloud_data, name="get_trends_cloud_data"),
     path("tweets/", views.tweet_list, name="tweet_list"),
@@ -16,5 +17,6 @@ urlpatterns = [
     path("forecast-views/<int:tweet_id>/", views.forecast_views, name="forecast_views"),
     path("sentiment/<int:tweet_id>/", views.sentiment, name="sentiment"),
     path("trends-iteration/", views.get_trends_iteration, name="get_trends_iteration"),
+    path("trends-latest-state/", views.get_trends_latest_state, name="get_trends_latest_state"),
     path("trend-analytics/", views.get_trend_analytics, name="get_trend_analytics"),
 ]

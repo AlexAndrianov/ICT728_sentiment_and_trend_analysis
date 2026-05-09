@@ -559,12 +559,122 @@
         const viralClusterTrends = {{ cluster_stats_json|safe }};
         let previousClusterStatsByTitle = {};
 
+        const savedTrendsLayout = {{ trend_layout_json|safe }};
+
         // Global arrays to store accumulated data from async iteration
         let latestIterationTweets = [];
         let trendsIterationInterval = null;
         let isIterationRunning = false;
 
         let isHashtagMode = true;
+
+        let trendsLayoutSaveTimer = null;
+
+        function getTrendTitleFromElement(element) {
+            return element?.querySelector('.trend-title')?.textContent?.trim() || '';
+        }
+
+        function clearTrendColumn(column, keepElement) {
+            if (!column) {
+                return;
+            }
+
+            column.querySelectorAll('.trend-post-card').forEach(card => card.remove());
+            column.querySelectorAll('.trend-card').forEach(card => {
+                if (keepElement && card === keepElement) {
+                    return;
+                }
+                card.remove();
+            });
+        }
+
+        function extractTrendsLayoutFromDom() {
+            const layout = { hashtag: {}, cluster: {} };
+
+            document.querySelectorAll('.trends-grid .trend-column').forEach(column => {
+                const col = column.getAttribute('data-column');
+                const trendCard = column.querySelector('.trend-card');
+                const title = getTrendTitleFromElement(trendCard);
+                if (col && title) {
+                    layout.hashtag[col] = title;
+                }
+            });
+
+            document.querySelectorAll('#cluster_trends-grid .trend-column').forEach(column => {
+                const col = column.getAttribute('data-column');
+                const trendCard = column.querySelector('.trend-card');
+                const title = getTrendTitleFromElement(trendCard);
+                if (col && title) {
+                    layout.cluster[col] = title;
+                }
+            });
+
+            return layout;
+        }
+
+        function scheduleSaveTrendsLayout() {
+            if (trendsLayoutSaveTimer) {
+                clearTimeout(trendsLayoutSaveTimer);
+            }
+
+            trendsLayoutSaveTimer = setTimeout(() => {
+                const layout = extractTrendsLayoutFromDom();
+                fetch('/save-trends-layout/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(layout)
+                }).catch(() => {});
+            }, 150);
+        }
+
+        function restoreTrendColumnsFromLayout(layout) {
+            if (!layout) {
+                return;
+            }
+
+            const hashtagLayout = layout.hashtag || {};
+            const clusterLayout = layout.cluster || {};
+
+            document.querySelectorAll('.trends-grid .trend-column').forEach(column => {
+                const col = column.getAttribute('data-column');
+                const title = col ? hashtagLayout[col] : null;
+                clearTrendColumn(column);
+                if (!title) {
+                    return;
+                }
+
+                const newCard = document.createElement('div');
+                newCard.className = 'trend-card';
+                newCard.draggable = true;
+                newCard.innerHTML = renderTrendCardHtml(buildMissingTrendData(title, 'hashtag'), true);
+                newCard.addEventListener('dragstart', handleDragStart);
+                newCard.addEventListener('dragend', handleDragEnd);
+                column.appendChild(newCard);
+
+                addPostsToTrendColumn(title, column);
+            });
+
+            document.querySelectorAll('#cluster_trends-grid .trend-column').forEach(column => {
+                const col = column.getAttribute('data-column');
+                const title = col ? clusterLayout[col] : null;
+                clearTrendColumn(column);
+                if (!title) {
+                    return;
+                }
+
+                const newCard = document.createElement('div');
+                newCard.className = 'trend-card';
+                newCard.draggable = true;
+                newCard.innerHTML = renderTrendCardHtml(buildMissingTrendData(title, 'cluster'), true);
+                newCard.addEventListener('dragstart', handleDragStart);
+                newCard.addEventListener('dragend', handleDragEnd);
+                column.appendChild(newCard);
+            });
+
+            synchronizeDroppedTrendCards();
+        }
 
         // Async iteration functions
         async function fetchTrendsIteration() {
@@ -617,15 +727,6 @@
                 if (cloudButton && viralHashtags.length > 0) {
                     cloudButton.classList.remove('hidden');
                 }
-                
-                // Save iteration state to localStorage for recovery
-                localStorage.setItem('trendsIterationData', JSON.stringify({
-                    timestamp: Date.now(),
-                    hashtagStats: data.hashtag_stats || [],
-                    clusterStats: data.trends_stats || [],
-                    tweetsData: data.tweets_data || [],
-                    iterationRunning: isIterationRunning
-                }));
                 
                 // Hide spinner after successful fetch
                 const spinner = document.getElementById('trends-spinner');
@@ -939,32 +1040,47 @@
                     toggle.classList.remove('active');
                 }
             }
-            
-            // Check if backend has existing data (returning to page) or starting fresh
-            const hasBackendData = viralHashtags.length > 0 || viralClusterTrends.length > 0;
-            
-            if (hasBackendData) {
-                // Returning to page with existing data - show it immediately
-                console.log('Returning to trends with', viralHashtags.length, 'hashtags');
-                
-                // Show cloud button
-                const cloudButton = document.getElementById('cloudButton');
-                if (cloudButton) {
-                    cloudButton.classList.remove('hidden');
+
+            const cloudButton = document.getElementById('cloudButton');
+
+            (async () => {
+                try {
+                    const resp = await fetch('/trends-latest-state/');
+                    const data = await resp.json();
+
+                    if (data?.tweets_data && Array.isArray(data.tweets_data)) {
+                        latestIterationTweets = data.tweets_data;
+                    }
+
+                    if (Array.isArray(data?.hashtag_stats)) {
+                        viralHashtags.length = 0;
+                        viralHashtags.push(...data.hashtag_stats);
+                    }
+
+                    if (Array.isArray(data?.trends_stats)) {
+                        viralClusterTrends.length = 0;
+                        viralClusterTrends.push(...data.trends_stats);
+                    }
+                } catch {
+                    return;
                 }
-                
-                // Initialize UI with existing data
-                initializeTrends();
-                console.log('Initialized trends with existing data');
-            } else {
-                // Starting fresh - clear localStorage
-                console.log('Starting fresh - clearing localStorage');
-                localStorage.removeItem('trendsIterationData');
-            }
-            
-            // Start async trends iteration loop immediately
-            startTrendsIteration();
-            
+            })().finally(() => {
+                const hasBackendData = viralHashtags.length > 0 || viralClusterTrends.length > 0;
+                if (hasBackendData) {
+                    console.log('Returning to trends with', viralHashtags.length, 'hashtags');
+                    if (cloudButton) {
+                        cloudButton.classList.remove('hidden');
+                    }
+                    initializeTrends();
+                    console.log('Initialized trends with existing data');
+                } else {
+                    console.log('Starting fresh');
+                }
+
+                restoreTrendColumnsFromLayout(savedTrendsLayout);
+                startTrendsIteration();
+            });
+
             // Initialize trends search
             const searchInput = document.getElementById('trends-search-input');
             if (searchInput) {
@@ -1247,6 +1363,7 @@
                     newCard.addEventListener('dragend', handleDragEnd);
                     
                     // Insert trend card at the top of column (as header)
+                    clearTrendColumn(column);
                     const firstPost = column.querySelector('.trend-post-card');
                     if (firstPost) {
                         column.insertBefore(newCard, firstPost);
@@ -1261,6 +1378,8 @@
                     if (trendTitle) {
                         addPostsToTrendColumn(trendTitle, column);
                     }
+
+                    scheduleSaveTrendsLayout();
                 } else if (draggedType === 'post') {
                     // Handle post drop (move post card to column)
                     // Insert post after all trend cards
@@ -1274,12 +1393,25 @@
                 } else if (draggedType === 'trend-card') {
                     // Handle trend card drop from column (move between columns)
                     // Insert at the top of column
+                    const sourceColumn = draggedElement.closest('.trend-column');
+                    const movedTitle = getTrendTitleFromElement(draggedElement);
+                    clearTrendColumn(column, draggedElement);
                     const firstPost = column.querySelector('.trend-post-card');
                     if (firstPost) {
                         column.insertBefore(draggedElement, firstPost);
                     } else {
                         column.appendChild(draggedElement);
                     }
+
+                    if (sourceColumn && sourceColumn !== column) {
+                        clearTrendColumn(sourceColumn);
+                    }
+
+                    if (movedTitle) {
+                        addPostsToTrendColumn(movedTitle, column);
+                    }
+
+                    scheduleSaveTrendsLayout();
                 }
             }
             
