@@ -234,6 +234,31 @@
             overflow-y: auto;
             display: flex;
             flex-direction: column;
+            position: relative;
+        }
+
+        .trend-column-remove {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 15px;
+            height: 15px;
+            border-radius: 6px;
+            border: 1px solid rgba(185, 28, 28, 1);
+            background: rgba(220, 38, 38, 0.95);
+            color: rgba(255, 255, 255, 1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            line-height: 1;
+            cursor: pointer;
+            user-select: none;
+            z-index: 5;
+        }
+
+        .trend-column-remove:hover {
+            background: rgba(185, 28, 28, 0.95);
         }
 
         .trend-column.drag-over {
@@ -588,6 +613,38 @@
             });
         }
 
+        function ensureTrendColumnRemoveButtons() {
+            document.querySelectorAll('.trend-column').forEach(column => {
+                const hasContent = Boolean(column.querySelector('.trend-card, .trend-post-card'));
+                const existingButton = column.querySelector('.trend-column-remove');
+
+                if (!hasContent) {
+                    existingButton?.remove();
+                    return;
+                }
+
+                if (existingButton) {
+                    return;
+                }
+
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'trend-column-remove';
+                btn.setAttribute('aria-label', 'Remove trend from column');
+                btn.textContent = '×';
+
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    clearTrendColumn(column);
+                    scheduleSaveTrendsLayout();
+                    ensureTrendColumnRemoveButtons();
+                });
+
+                column.appendChild(btn);
+            });
+        }
+
         function extractTrendsLayoutFromDom() {
             const layout = { hashtag: {}, cluster: {} };
 
@@ -634,6 +691,8 @@
                 return;
             }
 
+            ensureTrendColumnRemoveButtons();
+
             const hashtagLayout = layout.hashtag || {};
             const clusterLayout = layout.cluster || {};
 
@@ -654,6 +713,8 @@
                 column.appendChild(newCard);
 
                 addPostsToTrendColumn(title, column);
+
+                ensureTrendColumnRemoveButtons();
             });
 
             document.querySelectorAll('#cluster_trends-grid .trend-column').forEach(column => {
@@ -671,9 +732,14 @@
                 newCard.addEventListener('dragstart', handleDragStart);
                 newCard.addEventListener('dragend', handleDragEnd);
                 column.appendChild(newCard);
+
+                addPostsToTrendColumn(title, column);
+
+                ensureTrendColumnRemoveButtons();
             });
 
             synchronizeDroppedTrendCards();
+            ensureTrendColumnRemoveButtons();
         }
 
         // Async iteration functions
@@ -973,6 +1039,8 @@
                 // Rebuild post cards from fresh iteration data to avoid stale metrics and duplicates.
                 refreshPostsForTrendColumn(trendTitle, column);
             });
+
+            ensureTrendColumnRemoveButtons();
         }
 
         function buildMissingTrendData(title, mode) {
@@ -1065,6 +1133,7 @@
                     return;
                 }
             })().finally(() => {
+                ensureTrendColumnRemoveButtons();
                 const hasBackendData = viralHashtags.length > 0 || viralClusterTrends.length > 0;
                 if (hasBackendData) {
                     console.log('Returning to trends with', viralHashtags.length, 'hashtags');
@@ -1380,6 +1449,7 @@
                     }
 
                     scheduleSaveTrendsLayout();
+                    ensureTrendColumnRemoveButtons();
                 } else if (draggedType === 'post') {
                     // Handle post drop (move post card to column)
                     // Insert post after all trend cards
