@@ -1,608 +1,841 @@
+{% load static %}
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Trends Cloud</title>
-    <style>
-        :root {
-            --bg: #f5f8fa;
-            --panel: #ffffff;
-            --border: #e6ecf0;
-            --text: #14171a;
-            --muted: #536471;
-            --accent: #1da1f2;
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trends Cloud</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
 
-        body {
-            font-family: Arial, sans-serif;
-            background: linear-gradient(135deg, rgba(66, 153, 225, 0.15) 0%, rgba(159, 122, 234, 0.15) 100%);
-            margin: 0;
-            height: 100vh;
-            color: var(--text);
-            overflow: hidden;
-        }
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: #ffffff;
+    color: #111111;
+    min-height: 100vh;
+  }
 
-        .page {
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
+  /* ── TOP BAR ── */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 13px 24px;
+    border-bottom: 1px solid #ebebeb;
+    background: rgba(255,255,255,0.98);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
 
-        .header {
-            padding: 13px 20px;
-            border-bottom: 1px solid var(--border);
-            background: rgba(255, 255, 255, 0.98);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
+  .topbar-left {
+    display: flex;
+    flex-direction: column;
+  }
 
-        .title-wrap h1 {
-            margin: 0;
-            font-size: 16px;
-        }
+  .topbar-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 15px;
+    font-weight: 800;
+    color: #111;
+  }
 
-        .title-wrap .sub {
-            margin-top: 6px;
-            font-size: 12px;
-            color: var(--muted);
-        }
+  .topbar-sub {
+    font-size: 11px;
+    color: #999;
+    margin-top: 3px;
+  }
 
-        .actions {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        }
+  .topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
 
-        .btn {
-            background: white;
-            border: 1px solid var(--border);
-            padding: 8px 12px;
-            border-radius: 10px;
-            cursor: pointer;
-            font-size: 12px;
-            font-weight: 600;
-        }
+  .spinner {
+    width: 18px;
+    height: 18px;
+    border: 2.5px solid rgba(29, 161, 242, 0.15);
+    border-top: 2.5px solid #1da1f2;
+    border-radius: 50%;
+    display: none;
+  }
+  .spinner.active {
+    display: block;
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
 
-        .btn:hover {
-            border-color: var(--accent);
-        }
+  .btn-nav {
+    padding: 7px 16px;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+    background: #fff;
+    color: #555;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.18s;
+  }
+  .btn-nav:hover { background: #f5f5f5; border-color: #999; color: #111; }
 
-        .spinner {
-            width: 18px;
-            height: 18px;
-            border: 3px solid rgba(29, 161, 242, 0.12);
-            border-top: 3px solid #1da1f2;
-            border-radius: 50%;
-            display: none;
-        }
+  /* ── HERO ── */
+  .cloud-hero {
+    text-align: center;
+    padding: 36px 40px 14px;
+  }
+  .cloud-title {
+    font-family: 'Syne', sans-serif;
+    font-size: clamp(1.5rem, 3.2vw, 2.2rem);
+    font-weight: 800;
+    color: #111;
+    margin-bottom: 6px;
+  }
+  .cloud-sub {
+    font-size: 0.85rem;
+    color: #999;
+    margin-bottom: 24px;
+  }
 
-        .spinner.active {
-            display: block;
-            animation: spin 1s linear infinite;
-        }
+  /* ── FILTER PILLS ── */
+  .cloud-filters {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 32px;
+  }
+  .filter-pill {
+    padding: 5px 15px;
+    border-radius: 20px;
+    border: 1px solid #ddd;
+    background: #fff;
+    color: #777;
+    font-size: 0.76rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.18s;
+  }
+  .filter-pill:hover { border-color: #aaa; color: #333; }
+  .filter-pill.active { background: #111; border-color: #111; color: #fff; }
 
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
+  /* ── WORD CLOUD ── */
+  .word-cloud-container {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 10px 48px 80px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 10px 18px;
+    min-height: 340px;
+  }
 
-        .cloud-wrap {
-            flex: 1;
-            padding: 18px 20px;
-            overflow: auto;
-        }
+  .trend-word {
+    display: inline-block;
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    cursor: pointer;
+    line-height: 1.1;
+    padding: 3px 6px;
+    border-radius: 5px;
+    transition: background 0.15s, transform 0.15s, color 0.15s;
+    user-select: none;
+  }
+  .trend-word:hover {
+    background: #f0f0f0;
+    transform: scale(1.1);
+  }
+  .trend-word.active-word { background: #efefef; }
 
-        .cloud {
-            background: rgba(255, 255, 255, 0.95);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            min-height: calc(100vh - 90px);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            position: relative;
-            overflow: hidden;
-        }
+  /* sentiment colour tints */
+  .sent-high  { color: #0f6e56; }
+  .sent-mid   { color: #185fa5; }
+  .sent-low   { color: #a32d2d; }
 
-        #cloud3d {
-            width: 100%;
-            height: 100%;
-            position: relative;
-        }
-        #cloud3d canvas {
-            display: block;
-            width: 100% !important;
-            height: 100% !important;
-        }
+  .empty-cloud {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 300px;
+    color: #aaa;
+    font-size: 0.9rem;
+    gap: 8px;
+    text-align: center;
+  }
+  .empty-cloud span { font-size: 2rem; }
 
-        .trends-list {
-            width: 100%;
-            height: 100%;
-            overflow: auto;
-            background: rgba(255, 255, 255, 0.95);
-        }
-    </style>
+  /* ── DROPDOWN WIDGET ── */
+  .trend-dropdown {
+    position: fixed;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 14px;
+    padding: 18px 20px;
+    width: 290px;
+    z-index: 300;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06);
+    animation: dropIn 0.16s ease;
+    display: none;
+  }
+  @keyframes dropIn {
+    from { opacity: 0; transform: translateY(-6px) scale(0.97); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .trend-dropdown.visible { display: block; }
+
+  .dd-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .dd-title {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 1rem;
+    color: #111;
+  }
+  .dd-close {
+    width: 24px; height: 24px;
+    border-radius: 6px;
+    background: #f5f5f5;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    font-size: 0.8rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+  }
+  .dd-close:hover { background: #eee; color: #333; }
+
+  .dd-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    margin-bottom: 14px;
+  }
+  .dd-badge.up   { background: #edfaf5; color: #1a9c6b; }
+  .dd-badge.down { background: #fef0f2; color: #d63352; }
+  .dd-badge.flat { background: #f5f5f5; color: #888; }
+
+  .dd-metrics { display: flex; flex-direction: column; gap: 9px; }
+  .dd-metric {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .dd-metric-label { font-size: 0.76rem; color: #888; }
+  .dd-metric-val   { font-size: 0.82rem; font-weight: 600; color: #111; }
+
+  .dd-bar-row { margin-top: 4px; }
+  .dd-bar-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.71rem;
+    color: #aaa;
+    margin-bottom: 4px;
+  }
+  .dd-bar-track {
+    height: 5px;
+    border-radius: 3px;
+    background: #f0f0f0;
+    overflow: hidden;
+  }
+  .dd-bar-fill-sentiment {
+    height: 100%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, #ef4444, #22c55e);
+    transition: width 0.45s ease;
+  }
+  .dd-bar-fill-views {
+    height: 100%;
+    border-radius: 3px;
+    background: #1da1f2;
+    transition: width 0.45s ease;
+  }
+
+  .dd-dbl-hint {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid #f0f0f0;
+    font-size: 0.7rem;
+    color: #bbb;
+    text-align: center;
+  }
+
+  /* ── TICKER ── */
+  .trending-ticker {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 36px;
+    background: #fafafa;
+    border-top: 1px solid #ebebeb;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    z-index: 50;
+  }
+  .ticker-label {
+    padding: 0 14px;
+    white-space: nowrap;
+    font-family: 'Syne', sans-serif;
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: #111;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border-right: 1px solid #e0e0e0;
+  }
+  .ticker-track { flex: 1; overflow: hidden; }
+  .ticker-inner {
+    display: flex;
+    gap: 36px;
+    white-space: nowrap;
+    animation: ticker 30s linear infinite;
+  }
+  @keyframes ticker {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+  }
+  .ticker-item { font-size: 0.73rem; color: #888; cursor: pointer; transition: color 0.15s; }
+  .ticker-item:hover { color: #111; }
+  .ticker-item .t-up   { color: #1a9c6b; margin-right: 2px; }
+  .ticker-item .t-down { color: #d63352; margin-right: 2px; }
+  .ticker-item .t-flat { color: #aaa; margin-right: 2px; }
+</style>
 </head>
 <body>
-    <div class="page">
-        <div class="header">
-            <div class="title-wrap">
-                <h1>Trends Cloud</h1>
-                <div class="sub">Double-click any trend to open analytics. Trends are sorted by forecast views.</div>
-            </div>
-            <div class="actions">
-                <div id="cloud-spinner" class="spinner"></div>
-                <button class="btn" onclick="navigateToTrends()">To Trends</button>
-                <button class="btn" onclick="navigateBack()">Back to Selector</button>
-            </div>
+
+<!-- Top bar -->
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="topbar-title">Trends Cloud</div>
+    <div class="topbar-sub">Word size = forecast views &nbsp;·&nbsp; Click word to see metrics &nbsp;·&nbsp; Double-click for deep analytics</div>
+  </div>
+  <div class="topbar-right">
+    <div id="cloud-spinner" class="spinner"></div>
+    <button class="btn-nav" onclick="navigateToTrends()">← To Trends</button>
+    <button class="btn-nav" onclick="navigateBack()">Back to Selector</button>
+  </div>
+</div>
+
+<!-- Hero -->
+<div class="cloud-hero">
+  <h1 class="cloud-title">Live Trends Cloud</h1>
+  <p class="cloud-sub" id="cloud-sub-text">Loading trends data…</p>
+</div>
+
+<!-- Filters -->
+<div class="cloud-filters">
+  <button class="filter-pill active" onclick="filterCloud('all', this)">All Trends</button>
+  <button class="filter-pill" onclick="filterCloud('high', this)">High Sentiment (&gt;70%)</button>
+  <button class="filter-pill" onclick="filterCloud('mid', this)">Mid Sentiment (40–70%)</button>
+  <button class="filter-pill" onclick="filterCloud('low', this)">Low Sentiment (&lt;40%)</button>
+  <button class="filter-pill" onclick="filterCloud('top', this)">Top 10 Views</button>
+</div>
+
+<!-- Word Cloud -->
+<div class="word-cloud-container" id="word-cloud">
+  <div class="empty-cloud">
+    <span>☁️</span>
+    <div>Loading trends…</div>
+  </div>
+</div>
+
+<!-- Dropdown -->
+<div class="trend-dropdown" id="trend-dropdown">
+  <div class="dd-header">
+    <span class="dd-title" id="dd-word-title">—</span>
+    <button class="dd-close" onclick="closeDropdown()">✕</button>
+  </div>
+  <div id="dd-badge" class="dd-badge flat">— No change</div>
+  <div class="dd-metrics" id="dd-metrics"></div>
+  <div class="dd-dbl-hint">Double-click to open full analytics ↗</div>
+</div>
+
+<!-- Ticker -->
+<div class="trending-ticker">
+  <div class="ticker-label">🔥 Live</div>
+  <div class="ticker-track">
+    <div class="ticker-inner" id="ticker-inner"></div>
+  </div>
+</div>
+
+<script>
+  let allTrends   = [];
+  let activeFilter = 'all';
+  let activeWordEl = null;
+  let cloudRefreshInterval = null;
+
+  /* ── DATA FETCH ── */
+  async function refreshCloud() {
+    const spinner = document.getElementById('cloud-spinner');
+    if (spinner) spinner.classList.add('active');
+
+    try {
+      const resp = await fetch('/trend-cloud-data/');
+      const data = await resp.json();
+      const items = data?.items || [];
+
+      if (items.length) {
+        allTrends = items;
+        document.getElementById('cloud-sub-text').textContent =
+          `${items.length} trends tracked · Word size reflects forecast views · Click any word for metrics`;
+        buildCloud();
+      } else {
+        showEmpty();
+      }
+    } catch (e) {
+      showEmpty('Error loading data — retrying…');
+    } finally {
+      if (spinner) spinner.classList.remove('active');
+    }
+  }
+
+  function showEmpty(msg) {
+    const container = document.getElementById('word-cloud');
+    container.innerHTML = `<div class="empty-cloud"><span>☁️</span><div>${msg || 'No trends data yet.<br>Open the Trends Dashboard first to run an iteration.'}</div></div>`;
+    document.getElementById('ticker-inner').innerHTML = '';
+    document.getElementById('cloud-sub-text').textContent = 'Waiting for iteration data…';
+  }
+
+  /* ── FILTER + BUILD ── */
+  function filterCloud(filter, btn) {
+    activeFilter = filter;
+    document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    closeDropdown();
+    buildCloud();
+  }
+
+  function getFiltered() {
+    if (!allTrends.length) return [];
+    let list = [...allTrends];
+
+    if (activeFilter === 'high') {
+      list = list.filter(t => Number(t.sentiment || 0) >= 70);
+    } else if (activeFilter === 'mid') {
+      list = list.filter(t => { const s = Number(t.sentiment || 0); return s >= 40 && s < 70; });
+    } else if (activeFilter === 'low') {
+      list = list.filter(t => Number(t.sentiment || 0) < 40);
+    } else if (activeFilter === 'top') {
+      list = list.sort((a, b) => Number(b.total_views || 0) - Number(a.total_views || 0)).slice(0, 10);
+    }
+
+    return list;
+  }
+
+  function buildCloud() {
+    const container = document.getElementById('word-cloud');
+    container.innerHTML = '';
+
+    const filtered = getFiltered();
+
+    if (!filtered.length) {
+      container.innerHTML = '<div class="empty-cloud"><span>🔍</span><div>No trends match this filter.</div></div>';
+      buildTicker([]);
+      return;
+    }
+
+    const maxViews = Math.max(...filtered.map(t => Number(t.total_views || 0)), 1);
+
+    // Shuffle slightly so same-size words don't always cluster — sort by views with a little jitter
+    const sorted = [...filtered].sort((a, b) => Number(b.total_views || 0) - Number(a.total_views || 0));
+
+    sorted.forEach(trend => {
+      const views = Number(trend.total_views || 0);
+      const sentiment = Number(trend.sentiment || 0);
+      const size = 20 + ((views / maxViews) * 46);
+      const opacity = 0.65 + (views / maxViews) * 0.35;
+
+      const span = document.createElement('span');
+      span.className = 'trend-word';
+
+      // Sentiment colour class
+      if (sentiment >= 70) span.classList.add('sent-high');
+      else if (sentiment >= 40) span.classList.add('sent-mid');
+      else span.classList.add('sent-low');
+
+      span.textContent = trend.title;
+      span.style.fontSize = size + 'px';
+      span.style.opacity = opacity;
+
+      span.addEventListener('click',  (e) => openDropdown(e, trend, span));
+      span.addEventListener('dblclick', (e) => { e.stopPropagation(); openAnalytics(trend.title, 0); });
+
+      container.appendChild(span);
+    });
+
+    buildTicker(sorted);
+  }
+
+  /* ── DROPDOWN ── */
+  function openDropdown(e, trend, el) {
+    e.stopPropagation();
+    if (activeWordEl) activeWordEl.classList.remove('active-word');
+    activeWordEl = el;
+    el.classList.add('active-word');
+
+    const dd = document.getElementById('trend-dropdown');
+    document.getElementById('dd-word-title').textContent = trend.title;
+
+    // Badge based on total_views_diff
+    const diff = Number(trend.total_views_diff || 0);
+    const badge = document.getElementById('dd-badge');
+    if (diff > 0) {
+      badge.className = 'dd-badge up';
+      badge.textContent = `↑ +${diff.toFixed(1)}% forecast views`;
+    } else if (diff < 0) {
+      badge.className = 'dd-badge down';
+      badge.textContent = `↓ ${diff.toFixed(1)}% forecast views`;
+    } else {
+      badge.className = 'dd-badge flat';
+      badge.textContent = '— No change yet';
+    }
+
+    const views = Number(trend.total_views || 0);
+    const sentiment = Number(trend.sentiment || 0);
+    const engagement = Number(trend.engagement_count || 0);
+    const sentDiff = Number(trend.sentiment_diff || 0);
+    const engDiff = Number(trend.engagement_diff || 0);
+
+    // Views bar: relative to all trends max
+    const maxViews = Math.max(...allTrends.map(t => Number(t.total_views || 0)), 1);
+    const viewsPct = Math.round((views / maxViews) * 100);
+
+    document.getElementById('dd-metrics').innerHTML = `
+      <div class="dd-metric">
+        <span class="dd-metric-label">Forecast Views</span>
+        <span class="dd-metric-val">${formatViews(views)}</span>
+      </div>
+      <div class="dd-bar-row">
+        <div class="dd-bar-label"><span>Relative to top trend</span><span>${viewsPct}%</span></div>
+        <div class="dd-bar-track"><div class="dd-bar-fill-views" style="width:${viewsPct}%"></div></div>
+      </div>
+
+      <div class="dd-metric" style="margin-top:6px">
+        <span class="dd-metric-label">Sentiment</span>
+        <span class="dd-metric-val" style="color:${sentiment>=70?'#1a9c6b':sentiment>=40?'#185fa5':'#d63352'}">${sentiment.toFixed(1)}%</span>
+      </div>
+      <div class="dd-bar-row">
+        <div class="dd-bar-label"><span>Negative → Positive</span><span>${sentiment.toFixed(1)}%</span></div>
+        <div class="dd-bar-track"><div class="dd-bar-fill-sentiment" style="width:${sentiment}%"></div></div>
+      </div>
+
+      <div class="dd-metric" style="margin-top:6px">
+        <span class="dd-metric-label">Engagement (posts)</span>
+        <span class="dd-metric-val">${engagement.toLocaleString()}</span>
+      </div>
+
+      ${sentDiff !== 0 ? `
+      <div class="dd-metric">
+        <span class="dd-metric-label">Sentiment change</span>
+        <span class="dd-metric-val" style="color:${sentDiff>0?'#1a9c6b':'#d63352'}">${sentDiff>0?'+':''}${sentDiff.toFixed(1)}%</span>
+      </div>` : ''}
+
+      ${engDiff !== 0 ? `
+      <div class="dd-metric">
+        <span class="dd-metric-label">Engagement change</span>
+        <span class="dd-metric-val" style="color:${engDiff>0?'#1a9c6b':'#d63352'}">${engDiff>0?'+':''}${engDiff}</span>
+      </div>` : ''}
+    `;
+
+    // Position
+    const rect = el.getBoundingClientRect();
+    let left = rect.left;
+    let top  = rect.bottom + 8;
+    if (left + 295 > window.innerWidth - 16) left = window.innerWidth - 311;
+    if (top  + 320 > window.innerHeight - 40) top = rect.top - 326;
+    dd.style.left = left + 'px';
+    dd.style.top  = top  + 'px';
+    dd.classList.add('visible');
+  }
+
+  function closeDropdown() {
+    document.getElementById('trend-dropdown').classList.remove('visible');
+    if (activeWordEl) { activeWordEl.classList.remove('active-word'); activeWordEl = null; }
+  }
+
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.trend-word') && !e.target.closest('.trend-dropdown')) closeDropdown();
+  });
+
+  /* ── TICKER ── */
+  function buildTicker(list) {
+    if (!list.length) {
+      document.getElementById('ticker-inner').innerHTML = '';
+      return;
+    }
+    const doubled = [...list, ...list];
+    document.getElementById('ticker-inner').innerHTML = doubled.map(t => {
+      const diff = Number(t.total_views_diff || 0);
+      const cls  = diff > 0 ? 't-up' : diff < 0 ? 't-down' : 't-flat';
+      const arrow = diff > 0 ? '▲' : diff < 0 ? '▼' : '—';
+      return `<span class="ticker-item">
+        <span class="${cls}">${arrow}</span>
+        ${t.title} <span style="color:#ccc;font-size:0.68rem">${formatViews(t.total_views)}</span>
+      </span>`;
+    }).join('');
+  }
+
+  /* ── HELPERS ── */
+  function formatViews(v) {
+    const n = Number(v || 0);
+    if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(1) + 'B';
+    if (n >= 1_000_000)     return (n / 1_000_000).toFixed(1) + 'M';
+    if (n >= 1_000)         return (n / 1_000).toFixed(1) + 'K';
+    return n.toLocaleString();
+  }
+
+  /* ── ANALYTICS (Analytic.html modal) ── */
+  let analyticsState = { isOpen: false, trendName: null, trendType: 0 };
+
+  function openAnalytics(trendName, trendType) {
+    const overlay  = document.getElementById('analytic-overlay');
+    const titleEl  = document.getElementById('analytic-title');
+    const subEl    = document.getElementById('analytic-subtitle');
+    if (!overlay || !titleEl || !subEl) return;
+
+    analyticsState = { isOpen: true, trendName, trendType };
+    titleEl.textContent = trendName || '';
+    subEl.textContent   = trendType === 0 ? 'Hashtag analytics' : 'Cluster analytics';
+
+    overlay.classList.add('is-open');
+    overlay.setAttribute('aria-hidden', 'false');
+    fetchAndRenderAnalytics();
+  }
+
+  function closeAnalytics() {
+    const overlay = document.getElementById('analytic-overlay');
+    if (!overlay) return;
+    analyticsState = { isOpen: false, trendName: null, trendType: 0 };
+    overlay.classList.remove('is-open');
+    overlay.setAttribute('aria-hidden', 'true');
+  }
+
+  async function fetchAndRenderAnalytics() {
+    const { trendName, trendType, isOpen } = analyticsState;
+    if (!isOpen || !trendName) return;
+    const url = `/trend-analytics/?name=${encodeURIComponent(trendName)}&type=${encodeURIComponent(String(trendType))}`;
+    try {
+      const resp = await fetch(url);
+      const data = await resp.json();
+      if (data?.error) return;
+      renderAnalyticsMetrics(data);
+      drawAnalyticsChart(data?.series || []);
+    } catch { /* silent */ }
+  }
+
+  function formatCompactNumber(num) {
+    const n = Number(num || 0);
+    if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(1) + 'B';
+    if (n >= 1_000_000)     return (n / 1_000_000).toFixed(1) + 'M';
+    if (n >= 1_000)         return (n / 1_000).toFixed(1) + 'K';
+    return n.toLocaleString();
+  }
+
+  function getDiffMeta(diff) {
+    const value = Number(diff || 0);
+    if (value > 0) return { className: 'positive', arrow: '▲', value };
+    if (value < 0) return { className: 'negative', arrow: '▼', value };
+    return { className: 'neutral', arrow: '−', value: 0 };
+  }
+
+  function renderAnalyticsMetrics(data) {
+    const metricsEl = document.getElementById('analytic-metrics');
+    if (!metricsEl) return;
+    const latest = data?.latest || null;
+    if (!latest) { metricsEl.innerHTML = ''; return; }
+
+    const views      = Number(latest.total_views || 0);
+    const engagement = Number(latest.engagement_count || 0);
+    const sentiment  = Number(latest.sentiment || 0);
+    const vd = getDiffMeta(latest.total_views_diff);
+    const sd = getDiffMeta(latest.sentiment_diff);
+    const ed = getDiffMeta(latest.engagement_diff);
+
+    metricsEl.innerHTML = `
+      <div class="analytic-metrics-headers">
+        <div class="analytic-header-item">Forecast views</div>
+        <div class="analytic-header-item">Sentiment</div>
+        <div class="analytic-header-item">Engagement</div>
+      </div>
+      <div class="analytic-metrics-row">
+        <div class="analytic-metric">
+          <div class="value">${formatCompactNumber(views)}</div>
+          <div class="diff ${vd.className}">${vd.arrow} ${vd.value > 0 ? '+' : ''}${vd.value.toFixed(1)}%</div>
         </div>
-
-        <div class="cloud-wrap">
-            <div id="trendsList" class="trends-list">
-                <!-- Trends will be rendered here as a list -->
-            </div>
+        <div class="analytic-metric">
+          <div class="value">${sentiment.toFixed(1)}%</div>
+          <div class="diff ${sd.className}">${sd.arrow} ${sd.value > 0 ? '+' : ''}${sd.value.toFixed(1)}%</div>
         </div>
-    </div>
+        <div class="analytic-metric">
+          <div class="value">${engagement.toLocaleString()}</div>
+          <div class="diff ${ed.className}">${ed.arrow} ${ed.value > 0 ? '+' : ''}${ed.value}</div>
+        </div>
+      </div>
+    `;
+  }
 
-    <script>
-        let cloudRefreshInterval = null;
-        let cloudInstance = null;
+  function drawAnalyticsChart(series) {
+    try {
+      const canvas = document.getElementById('analytic-chart');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
 
-        function computeWeight(value, minValue, maxValue) {
-            const minWeight = 12;
-            const maxWeight = 64;
+      const w = canvas.width, h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
 
-            const v = Number(value || 0);
-            const minV = Number(minValue || 0);
-            const maxV = Number(maxValue || 0);
+      const padding = { left: 70, right: 80, top: 18, bottom: 60 };
+      const plotW = w - padding.left - padding.right;
+      const plotH = h - padding.top - padding.bottom;
 
-            if (maxV <= minV) {
-                return minWeight;
-            }
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = 'rgba(226,232,240,1)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(padding.left, padding.top, plotW, plotH);
 
-            const t = (v - minV) / (maxV - minV);
-            return Math.round(minWeight + t * (maxWeight - minWeight));
+      if (!series || series.length === 0) {
+        ctx.fillStyle = '#64748b'; ctx.font = '12px Arial';
+        ctx.fillText('Not enough data yet', padding.left + 10, padding.top + 22);
+        return;
+      }
+
+      const xs = series.map(p => { const m = p.minutes_since_start; return (m === null || m === undefined || isNaN(Number(m))) ? Number(p.iteration || 0) : Number(m); });
+      const ys = series.map(p => Number(p.forecast_views || 0));
+      const ss = series.map(p => Number(p.sentiment || 0));
+      const es = series.map(p => Number(p.engagement || 0));
+
+      const minX = Math.min(...xs), maxX = Math.max(...xs);
+      const maxY = Math.max(...ys, 1);
+      const maxE = Math.max(...es, 1);
+
+      const xS = x => maxX === minX ? padding.left : padding.left + ((x - minX) / (maxX - minX)) * plotW;
+      const yS = y => padding.top + (1 - y / maxY) * plotH;
+      const sS = s => padding.top + (1 - s / 100) * plotH;
+      const eS = e => padding.top + (1 - e / maxE) * plotH;
+
+      ctx.strokeStyle = 'rgba(148,163,184,0.7)';
+      const G = 4;
+      for (let i = 0; i <= G; i++) {
+        const gy = padding.top + (i / G) * plotH;
+        ctx.beginPath(); ctx.moveTo(padding.left, gy); ctx.lineTo(padding.left + plotW, gy); ctx.stroke();
+      }
+
+      ctx.font = 'bold 12px Arial';
+      ctx.fillStyle = '#1da1f2';
+      for (let i = 0; i <= G; i++) {
+        const gy = padding.top + (i / G) * plotH;
+        ctx.fillText(formatCompactNumber(maxY * (1 - i / G)), 6, gy + 4);
+      }
+      ctx.fillStyle = '#ef4444';
+      for (let i = 0; i <= G; i++) {
+        const gy = padding.top + (i / G) * plotH;
+        ctx.fillText(`${Math.round(100 * (1 - i / G))}%`, padding.left + plotW + 8, gy + 4);
+      }
+      ctx.fillStyle = '#22c55e';
+      for (let i = 0; i <= G; i++) {
+        const gy = padding.top + (i / G) * plotH;
+        ctx.fillText(String(Math.round(maxE * (1 - i / G))), padding.left + plotW + 46, gy + 4);
+      }
+
+      // x labels
+      ctx.fillStyle = '#64748b'; ctx.font = 'bold 11px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      series.forEach((p, i) => {
+        const x = xS(xs[i]);
+        const m = p.minutes_since_start;
+        const label = (m !== null && m !== undefined && !isNaN(Number(m))) ? `${Number(m).toFixed(1)}m` : String(p.iteration ?? '');
+        ctx.fillText(label, Math.max(padding.left, Math.min(padding.left + plotW, x)), padding.top + plotH + 8);
+      });
+
+      // draw line helper
+      function drawLine(vals, scaleFn, color) {
+        ctx.strokeStyle = color; ctx.lineWidth = 2;
+        if (series.length === 1) {
+          const sy = scaleFn(vals[0]);
+          ctx.beginPath(); ctx.moveTo(padding.left, sy); ctx.lineTo(padding.left + plotW, sy); ctx.stroke();
+        } else {
+          ctx.beginPath();
+          series.forEach((_, i) => { const x = xS(xs[i]), y = scaleFn(vals[i]); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
+          ctx.stroke();
         }
+        ctx.fillStyle = color;
+        series.forEach((_, i) => { ctx.beginPath(); ctx.arc(xS(xs[i]), scaleFn(vals[i]), 3, 0, Math.PI * 2); ctx.fill(); });
+      }
 
-        function renderTrendsList(mount, items) {
-            console.log('renderTrendsList called with', items.length, 'items');
-            mount.innerHTML = '';
-            
-            if (!items.length) {
-                mount.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);">No data yet. Waiting for iterations...<br>Make sure to open Trends page first.</div>';
-                return;
-            }
-            
-            // Sort by total_views descending
-            const sortedItems = [...items].sort((a, b) => (b.total_views || 0) - (a.total_views || 0));
-            
-            // Create list container
-            const listContainer = document.createElement('div');
-            listContainer.style.cssText = 'display:flex;flex-direction:column;gap:8px;padding:20px;max-width:600px;margin:0 auto;';
-            
-            sortedItems.forEach((item, idx) => {
-                const row = document.createElement('div');
-                row.style.cssText = `
-                    display: flex;
-                    align-items: center;
-                    justify-content: space-between;
-                    padding: 12px 16px;
-                    background: rgba(255,255,255,0.95);
-                    border: 1px solid rgba(29,161,242,0.2);
-                    border-radius: 8px;
-                    cursor: pointer;
-                    transition: all 0.2s;
-                `;
-                row.onmouseover = () => {
-                    row.style.background = 'rgba(29,161,242,0.1)';
-                    row.style.transform = 'translateX(4px)';
-                };
-                row.onmouseout = () => {
-                    row.style.background = 'rgba(255,255,255,0.95)';
-                    row.style.transform = 'translateX(0)';
-                };
-                row.ondblclick = () => {
-                    console.log('Double-clicked trend:', item.title);
-                    openAnalytics(item.title, 0);
-                };
-                
-                // Rank number
-                const rank = document.createElement('span');
-                rank.textContent = (idx + 1) + '.';
-                rank.style.cssText = 'font-weight:600;color:#64748b;width:30px;';
-                
-                // Title
-                const title = document.createElement('span');
-                title.textContent = item.title;
-                title.style.cssText = 'flex:1;font-weight:500;color:#1e293b;margin-left:8px;';
-                
-                // Views
-                const views = document.createElement('span');
-                views.textContent = (item.total_views || 0).toLocaleString() + ' views';
-                views.style.cssText = 'color:#1da1f2;font-weight:600;font-size:0.9em;';
-                
-                row.appendChild(rank);
-                row.appendChild(title);
-                row.appendChild(views);
-                listContainer.appendChild(row);
-            });
-            
-            mount.appendChild(listContainer);
-            console.log('Trends list rendered with', sortedItems.length, 'items');
-        }
+      drawLine(ys, yS, '#1da1f2');
+      drawLine(ss, sS, '#ef4444');
+      drawLine(es, eS, '#22c55e');
 
-        async function refreshCloud() {
-            console.log('refreshCloud called');
-            const mount = document.getElementById('trendsList');
-            if (!mount) {
-                console.error('mount element #cloud3d not found');
-                return;
-            }
-            console.log('mount found, size:', mount.clientWidth, 'x', mount.clientHeight);
+      // Legend
+      ctx.font = '11px Arial'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      const ly = padding.top + plotH + 38, ll = 22, lg = 6;
+      let cx = padding.left;
+      [[' Forecast views','#1da1f2',88],[' Sentiment','#ef4444',68],[' Engagement','#22c55e',0]].forEach(([label, color, advance]) => {
+        ctx.strokeStyle = color; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(cx, ly + 5); ctx.lineTo(cx + ll, ly + 5); ctx.stroke();
+        ctx.fillStyle = color; ctx.fillText(label, cx + ll + lg, ly);
+        cx += ll + lg + advance;
+      });
 
-            // Don't wait for size - just proceed
-            if (mount.clientWidth === 0 || mount.clientHeight === 0) {
-                console.warn('Container has zero size, using default');
-            }
+      ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    } catch (e) { console.error('drawAnalyticsChart error', e); }
+  }
 
-            try {
-                console.log('Fetching cloud data from /trend-cloud-data/...');
-                const resp = await fetch('/trend-cloud-data/');
-                console.log('Response status:', resp.status);
-                const data = await resp.json();
-                console.log('Cloud data received:', JSON.stringify(data).substring(0, 500));
-                
-                const items = data?.items || [];
-                console.log('Items count:', items.length);
-                if (items.length > 0) {
-                    console.log('First item:', items[0]);
-                }
+  /* ── CLICK OUTSIDE ANALYTICS ── */
+  document.addEventListener('click', function(e) {
+    const overlay = document.getElementById('analytic-overlay');
+    const modal   = document.getElementById('analytic-modal');
+    if (!overlay || !modal || !analyticsState.isOpen) return;
+    if (!modal.contains(e.target) && overlay.contains(e.target)) closeAnalytics();
+  });
 
-                if (!items.length) {
-                    mount.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);">No data yet. Waiting for iterations...<br>Make sure to open Trends page first.</div>';
-                    return;
-                }
+  /* ── NAVIGATION ── */
+  function navigateBack() {
+    document.body.style.transition = 'opacity 0.8s ease-in-out';
+    document.body.style.opacity = '0';
+    setTimeout(() => { window.location.href = "{% url 'landing' %}"; }, 800);
+  }
 
-                // Render trends as a list
-                console.log('Rendering trends list');
-                renderTrendsList(mount, items);
-            } catch (e) {
-                console.error('refreshCloud error:', e);
-                mount.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#e0245e;">Error: ' + e.message + '</div>';
-            }
-        }
+  function navigateToTrends() {
+    document.body.style.transition = 'opacity 0.8s ease-in-out';
+    document.body.style.opacity = '0';
+    setTimeout(() => { window.location.href = "{% url 'trends' %}"; }, 800);
+  }
 
-        let analyticsState = {
-            isOpen: false,
-            trendName: null,
-            trendType: 0,
-        };
+  /* ── INIT ── */
+  document.addEventListener('DOMContentLoaded', function() {
+    const closeBtn = document.getElementById('analytic-close');
+    if (closeBtn) closeBtn.addEventListener('click', closeAnalytics);
 
-        function openAnalytics(trendName, trendType) {
-            const overlay = document.getElementById('analytic-overlay');
-            const title = document.getElementById('analytic-title');
-            const subtitle = document.getElementById('analytic-subtitle');
+    refreshCloud();
+    cloudRefreshInterval = setInterval(() => {
+      refreshCloud();
+      if (analyticsState.isOpen) fetchAndRenderAnalytics();
+    }, 20000);
+  });
 
-            if (!overlay || !title || !subtitle) {
-                return;
-            }
+  window.addEventListener('resize', buildCloud);
+</script>
 
-            analyticsState.isOpen = true;
-            analyticsState.trendName = trendName;
-            analyticsState.trendType = trendType;
-
-            title.textContent = trendName || '';
-            subtitle.textContent = trendType === 0 ? 'Hashtag analytics' : 'Cluster analytics';
-
-            overlay.classList.add('is-open');
-            overlay.setAttribute('aria-hidden', 'false');
-
-            fetchAndRenderAnalytics();
-        }
-
-        function closeAnalytics() {
-            const overlay = document.getElementById('analytic-overlay');
-            if (!overlay) {
-                return;
-            }
-
-            analyticsState.isOpen = false;
-            analyticsState.trendName = null;
-
-            overlay.classList.remove('is-open');
-            overlay.setAttribute('aria-hidden', 'true');
-        }
-
-        function refreshAnalyticsIfOpen() {
-            if (!analyticsState.isOpen) {
-                return;
-            }
-            fetchAndRenderAnalytics();
-        }
-
-        async function fetchAndRenderAnalytics() {
-            const trendName = analyticsState.trendName;
-            if (!analyticsState.isOpen || !trendName) {
-                return;
-            }
-
-            const url = `/trend-analytics/?name=${encodeURIComponent(trendName)}&type=${encodeURIComponent(String(analyticsState.trendType))}`;
-            try {
-                const resp = await fetch(url);
-                const data = await resp.json();
-                if (data?.error) {
-                    return;
-                }
-
-                renderAnalyticsMetrics(data);
-                drawAnalyticsChart(data?.series || []);
-            } catch {
-                return;
-            }
-        }
-
-        function renderAnalyticsMetrics(data) {
-            const metricsEl = document.getElementById('analytic-metrics');
-            if (!metricsEl) {
-                return;
-            }
-
-            const latest = data?.latest || null;
-            if (!latest) {
-                metricsEl.innerHTML = '';
-                return;
-            }
-
-            const views = Number(latest.total_views || 0);
-            const engagement = Number(latest.engagement_count || 0);
-            const sentiment = Number(latest.sentiment || 0);
-
-            metricsEl.innerHTML = `
-                <div class="analytic-metric"><div class="label">Forecast views</div><div class="value">${views.toLocaleString()}</div></div>
-                <div class="analytic-metric"><div class="label">Engagement (posts)</div><div class="value">${engagement.toLocaleString()}</div></div>
-                <div class="analytic-metric"><div class="label">Sentiment</div><div class="value">${sentiment.toFixed(1)}%</div></div>
-            `;
-        }
-
-        function drawAnalyticsChart(series) {
-            try {
-                const canvas = document.getElementById('analytic-chart');
-                if (!canvas) {
-                    return;
-                }
-
-                const ctx = canvas.getContext('2d');
-                if (!ctx) {
-                    return;
-                }
-
-                const w = canvas.width;
-                const h = canvas.height;
-
-                ctx.clearRect(0, 0, w, h);
-
-                const padding = { left: 46, right: 54, top: 18, bottom: 34 };
-                const plotW = w - padding.left - padding.right;
-                const plotH = h - padding.top - padding.bottom;
-
-                ctx.fillStyle = '#ffffff';
-                ctx.fillRect(0, 0, w, h);
-
-                ctx.strokeStyle = 'rgba(226, 232, 240, 1)';
-                ctx.lineWidth = 1;
-                ctx.strokeRect(padding.left, padding.top, plotW, plotH);
-
-                if (!series || series.length === 0) {
-                    ctx.fillStyle = '#64748b';
-                    ctx.font = '12px Arial';
-                    ctx.fillText('Not enough data yet', padding.left + 10, padding.top + 22);
-                    return;
-                }
-
-                const xs = series.map(p => {
-                    const mins = p.minutes_since_start;
-                    if (mins === null || mins === undefined || Number.isNaN(Number(mins))) {
-                        return Number(p.iteration || 0);
-                    }
-                    return Number(mins);
-                });
-
-                const ys = series.map(p => Number(p.forecast_views || 0));
-                const ss = series.map(p => Number(p.sentiment || 0));
-
-                const minX = Math.min(...xs);
-                const maxX = Math.max(...xs);
-                const minY = 0;
-                const maxY = Math.max(...ys, 1);
-
-                const minS = 0;
-                const maxS = 100;
-
-                function xScale(x) {
-                    if (maxX === minX) {
-                        return padding.left;
-                    }
-                    return padding.left + ((x - minX) / (maxX - minX)) * plotW;
-                }
-
-                function yScale(y) {
-                    return padding.top + (1 - ((y - minY) / (maxY - minY))) * plotH;
-                }
-
-                function sScale(s) {
-                    return padding.top + (1 - ((s - minS) / (maxS - minS))) * plotH;
-                }
-
-                ctx.strokeStyle = 'rgba(148, 163, 184, 0.7)';
-                ctx.fillStyle = '#64748b';
-                ctx.font = '11px Arial';
-
-                const gridLines = 4;
-                for (let i = 0; i <= gridLines; i++) {
-                    const gy = padding.top + (i / gridLines) * plotH;
-                    ctx.beginPath();
-                    ctx.moveTo(padding.left, gy);
-                    ctx.lineTo(padding.left + plotW, gy);
-                    ctx.stroke();
-
-                    const value = Math.round(maxY * (1 - i / gridLines));
-                    ctx.fillText(value.toLocaleString(), 6, gy + 4);
-                }
-
-                for (let i = 0; i <= gridLines; i++) {
-                    const gy = padding.top + (i / gridLines) * plotH;
-                    const sValue = Math.round(maxS * (1 - i / gridLines));
-                    const text = `${sValue}%`;
-                    const textWidth = ctx.measureText(text).width;
-                    ctx.fillText(text, padding.left + plotW + (padding.right - textWidth) - 6, gy + 4);
-                }
-
-                ctx.strokeStyle = 'rgba(226, 232, 240, 1)';
-                ctx.beginPath();
-                ctx.moveTo(padding.left + plotW, padding.top);
-                ctx.lineTo(padding.left + plotW, padding.top + plotH);
-                ctx.stroke();
-
-                const xVals = xs;
-                const viewsVals = ys;
-                const sentVals = ss;
-
-                ctx.fillStyle = '#64748b';
-                ctx.font = '10px Arial';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'top';
-                series.forEach((p, idx) => {
-                    const x = xScale(Number(xVals[idx] || 0));
-                    const mins = p?.minutes_since_start;
-                    const label = (mins !== null && mins !== undefined && !Number.isNaN(Number(mins)))
-                        ? `${Number(mins).toFixed(1)}m`
-                        : String(p?.iteration ?? '');
-
-                    const clampedX = Math.max(padding.left, Math.min(padding.left + plotW, x));
-                    ctx.fillText(label, clampedX, padding.top + plotH + 8);
-                });
-
-                ctx.lineWidth = 2;
-
-                ctx.strokeStyle = '#1da1f2';
-                if (series.length === 1) {
-                    const singleY = yScale(Number(viewsVals[0] || 0));
-                    ctx.beginPath();
-                    ctx.moveTo(padding.left, singleY);
-                    ctx.lineTo(padding.left + plotW, singleY);
-                    ctx.stroke();
-                } else {
-                    ctx.beginPath();
-                    series.forEach((p, idx) => {
-                        const x = xScale(Number(xVals[idx] || 0));
-                        const y = yScale(Number(viewsVals[idx] || 0));
-                        if (idx === 0) {
-                            ctx.moveTo(x, y);
-                        } else {
-                            ctx.lineTo(x, y);
-                        }
-                    });
-                    ctx.stroke();
-                }
-
-                ctx.fillStyle = '#1da1f2';
-                series.forEach((p, idx) => {
-                    const x = xScale(Number(xVals[idx] || 0));
-                    const y = yScale(Number(viewsVals[idx] || 0));
-                    ctx.beginPath();
-                    ctx.arc(x, y, 3, 0, Math.PI * 2);
-                    ctx.fill();
-                });
-
-                ctx.strokeStyle = '#ef4444';
-                if (series.length === 1) {
-                    const singleSY = sScale(Number(sentVals[0] || 0));
-                    ctx.beginPath();
-                    ctx.moveTo(padding.left, singleSY);
-                    ctx.lineTo(padding.left + plotW, singleSY);
-                    ctx.stroke();
-                } else {
-                    ctx.beginPath();
-                    series.forEach((p, idx) => {
-                        const x = xScale(Number(xVals[idx] || 0));
-                        const y = sScale(Number(sentVals[idx] || 0));
-                        if (idx === 0) {
-                            ctx.moveTo(x, y);
-                        } else {
-                            ctx.lineTo(x, y);
-                        }
-                    });
-                    ctx.stroke();
-                }
-
-                ctx.fillStyle = '#ef4444';
-                series.forEach((p, idx) => {
-                    const x = xScale(Number(xVals[idx] || 0));
-                    const y = sScale(Number(sentVals[idx] || 0));
-                    ctx.beginPath();
-                    ctx.arc(x, y, 3, 0, Math.PI * 2);
-                    ctx.fill();
-                });
-
-                ctx.textAlign = 'left';
-                ctx.textBaseline = 'alphabetic';
-            } catch (e) {
-                console.error('drawAnalyticsChart error', e);
-            }
-        }
-
-        document.addEventListener('click', function(e) {
-            const overlay = document.getElementById('analytic-overlay');
-            const modal = document.getElementById('analytic-modal');
-            if (!overlay || !modal) {
-                return;
-            }
-
-            if (!analyticsState.isOpen) {
-                return;
-            }
-
-            const clickedInside = modal.contains(e.target);
-            if (!clickedInside && overlay.contains(e.target)) {
-                closeAnalytics();
-            }
-        });
-
-        document.addEventListener('DOMContentLoaded', function() {
-            const closeBtn = document.getElementById('analytic-close');
-            if (closeBtn) {
-                closeBtn.addEventListener('click', closeAnalytics);
-            }
-
-            refreshCloud();
-            cloudRefreshInterval = setInterval(() => {
-                refreshCloud();
-                refreshAnalyticsIfOpen();
-            }, 5000);
-        });
-
-        function navigateBack() {
-            document.body.style.transition = "opacity 0.8s ease-in-out";
-            document.body.style.opacity = "0";
-            setTimeout(() => {
-                window.location.href = "{% url 'landing' %}";
-            }, 800);
-        }
-
-        function navigateToTrends() {
-            document.body.style.transition = "opacity 0.8s ease-in-out";
-            document.body.style.opacity = "0";
-            setTimeout(() => {
-                window.location.href = "{% url 'trends' %}";
-            }, 800);
-        }
-
-        window.addEventListener('resize', () => {
-            // Re-render cloud on resize
-            refreshCloud();
-        });
-    </script>
-
-    {% include 'predictor_app/Analytic.html' %}
+{% include 'predictor_app/Analytic.html' %}
 </body>
 </html>

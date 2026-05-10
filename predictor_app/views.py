@@ -408,9 +408,15 @@ def get_trends_cloud_data(request):
         
         items = []
         for title, stat in stats.items():
+            s = stat or {}
             items.append({
                 "title": title,
-                "total_views": int((stat or {}).get("total_views", 0) or 0),
+                "total_views": int(s.get("total_views", 0) or 0),
+                "sentiment": float(s.get("sentiment", 0) or 0),
+                "engagement_count": int(s.get("engagement_count", 0) or 0),
+                "total_views_diff": float(s.get("total_views_diff", 0) or 0),
+                "sentiment_diff": float(s.get("sentiment_diff", 0) or 0),
+                "engagement_diff": int(s.get("engagement_diff", 0) or 0),
             })
         
         items.sort(key=lambda x: x.get("total_views", 0), reverse=True)
